@@ -1,0 +1,20 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Notice extends Model
+{
+    protected $fillable = ['published_by', 'title', 'body', 'audience', 'published_at'];
+
+    protected function casts(): array
+    {
+        return ['published_at' => 'datetime'];
+    }
+
+    public function publisher()
+    {
+        return $this->belongsTo(User::class, 'published_by');
+    }
+}
