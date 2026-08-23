@@ -270,11 +270,25 @@ class Store extends ChangeNotifier {
   }
 
   Future<void> markAllNotificationsRead() async {
-    await api.readAllNotifications();
-    for (final notification in notifications) {
+    final unread = notifications
+        .where((notification) => !notification.isRead)
+        .toList();
+    if (unread.isEmpty) return;
+
+    for (final notification in unread) {
       notification.isRead = true;
     }
     notifyListeners();
+
+    try {
+      await api.readAllNotifications();
+    } catch (_) {
+      for (final notification in unread) {
+        notification.isRead = false;
+      }
+      notifyListeners();
+      rethrow;
+    }
   }
 
   Future<void> initialize() async {

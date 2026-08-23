@@ -635,13 +635,31 @@ class NotificationsScreen extends StatelessWidget {
       foregroundColor: Colors.white,
       title: const Text('Notifications'),
       actions: [
-        TextButton(
-          onPressed: store.unreadNotificationCount == 0
-              ? null
-              : store.markAllNotificationsRead,
-          style: TextButton.styleFrom(
-            foregroundColor: Colors.white,
-            disabledForegroundColor: Colors.white38,
+        AnimatedBuilder(
+          animation: store,
+          builder: (context, child) => TextButton(
+            onPressed: store.unreadNotificationCount == 0
+                ? null
+                : () async {
+                    try {
+                      await store.markAllNotificationsRead();
+                    } catch (_) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Could not mark notifications as read. Please try again.',
+                            ),
+                          ),
+                        );
+                      }
+                    }
+                  },
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.white,
+              disabledForegroundColor: Colors.white38,
+            ),
+            child: child!,
           ),
           child: const Text('Mark all read'),
         ),
@@ -816,7 +834,9 @@ class Dashboard extends StatelessWidget {
           physics: const NeverScrollableScrollPhysics(),
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
-          childAspectRatio: 1.75,
+          // Give the card contents enough vertical room on narrow phones and
+          // when Android's font scaling is slightly larger than the default.
+          childAspectRatio: 1.55,
           children: [
             Stat('Active', '$active', Icons.pending_actions, Colors.blue),
             Stat('Resolved', '$resolved', Icons.task_alt, Colors.green),
