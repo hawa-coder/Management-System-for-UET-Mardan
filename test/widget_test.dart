@@ -18,12 +18,22 @@ void main() {
     await tester.tap(find.text('Get Started'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Welcome Back'), findsOneWidget);
-    expect(find.text('Log In'), findsOneWidget);
+    expect(find.text('Student Access'), findsOneWidget);
+    expect(find.text('Sign In'), findsOneWidget);
+    expect(find.text('Create account'), findsOneWidget);
 
-    await tester.tap(find.text('Log In'));
+    await tester.tap(find.text('Sign In'));
     await tester.pump();
     expect(find.text('Password is required.'), findsOneWidget);
     expect(find.text('Dashboard'), findsNothing);
+
+    await tester.tap(find.text('Create account'));
+    await tester.pumpAndSettle();
+    expect(find.text('Full name'), findsOneWidget);
+    expect(find.text('Registration number'), findsOneWidget);
+    expect(find.text('Semester'), findsOneWidget);
+    expect(find.text('Section'), findsOneWidget);
+    expect(find.text('Mobile number'), findsOneWidget);
+    expect(find.text('Confirm password'), findsOneWidget);
   });
 }

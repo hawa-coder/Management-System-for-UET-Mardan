@@ -8,16 +8,20 @@ use App\Models\Complaint;
 use App\Models\ComplaintHistory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 class ComplaintController extends Controller
 {
     public function index(Request $request)
     {
         $user = $request->user();
-        $query = Complaint::with(['student:id,name,email,registration_number,batch,section', 'history.actor:id,name,role'])->latest();
+        $query = Complaint::with(['student:id,name,email,registration_number,batch,section,batch_adviser_id', 'history.actor:id,name,role'])->latest();
 
         if ($user->role === 'student') {
             $query->where('user_id', $user->id);
+        } elseif ($user->role === 'adviser') {
+            $query->where('current_handler_role', 'adviser')
+                ->whereHas('student', fn ($student) => $student->where('batch_adviser_id', $user->id));
         } elseif (! in_array($user->role, ['chairman', 'office', 'dean'], true)) {
             $query->where('current_handler_role', $user->role);
         }
@@ -32,13 +36,26 @@ class ComplaintController extends Controller
     public function store(Request $request)
     {
         abort_unless($request->user()->role === 'student', 403, 'Only students can submit complaints.');
+        abort_unless(
+            $request->user()->account_status === 'approved',
+            403,
+            'You cannot submit complaints until your batch adviser approves your account.'
+        );
 
         $data = $request->validate([
             'title' => ['required', 'string', 'max:150'],
             'details' => ['required', 'string', 'max:5000'],
             'category' => ['required', 'string', 'max:80'],
             'priority' => ['required', 'in:Low,Medium,High'],
+            'attachment' => ['nullable', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
         ]);
+
+        if ($request->hasFile('attachment')) {
+            $file = $request->file('attachment');
+            $data['attachment_path'] = $file->store('complaint-attachments');
+            $data['attachment_name'] = $file->getClientOriginalName();
+            $data['attachment_mime'] = $file->getMimeType();
+        }
 
         $complaint = DB::transaction(function () use ($request, $data) {
             $complaint = Complaint::create($data + [
@@ -71,13 +88,25 @@ class ComplaintController extends Controller
         return response()->json($complaint->load(['student', 'history.actor']));
     }
 
+    public function attachment(Request $request, Complaint $complaint)
+    {
+        abort_unless($request->hasValidSignature(false), 403, 'This attachment link has expired.');
+        abort_unless($complaint->attachment_path && Storage::exists($complaint->attachment_path), 404);
+
+        return Storage::download(
+            $complaint->attachment_path,
+            $complaint->attachment_name,
+            ['Content-Type' => $complaint->attachment_mime],
+        );
+    }
+
     public function transition(Request $request, Complaint $complaint)
     {
         $this->authorizeAccess($request, $complaint);
         abort_if($request->user()->role === 'student', 403, 'Students cannot change complaint status.');
 
         $data = $request->validate([
-            'action' => ['required', 'in:forward_coordinator,forward_chairman,send_office,send_dean,resolve,reject,return_chairman'],
+            'action' => ['required', 'in:accept,forward_coordinator,forward_chairman,send_office,send_dean,resolve,reject,return_chairman'],
             'remarks' => ['nullable', 'string', 'max:2000'],
         ]);
 
@@ -94,7 +123,14 @@ class ComplaintController extends Controller
             'dean' => ['return_chairman' => ['forwarded', 'chairman']],
         ];
 
-        $next = $allowed[$request->user()->role][$data['action']] ?? null;
+        $commonActions = [
+            'accept' => ['review', $request->user()->role],
+            'resolve' => ['resolved', 'closed'],
+            'reject' => ['rejected', 'closed'],
+        ];
+        $next = $commonActions[$data['action']]
+            ?? $allowed[$request->user()->role][$data['action']]
+            ?? null;
         abort_unless($next, 403, 'This action is not permitted for your role.');
         $previous = $complaint->status;
 
@@ -123,6 +159,12 @@ class ComplaintController extends Controller
     {
         $user = $request->user();
         abort_if($user->role === 'student' && $complaint->user_id !== $user->id, 403);
+        if ($user->role === 'adviser') {
+            $complaint->loadMissing('student:id,batch_adviser_id');
+            abort_if($complaint->current_handler_role !== 'adviser'
+                || $complaint->student?->batch_adviser_id !== $user->id, 403);
+            return;
+        }
         abort_if(! in_array($user->role, ['student', 'chairman', 'office', 'dean'], true)
             && $complaint->current_handler_role !== $user->role, 403);
     }

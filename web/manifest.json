@@ -1,6 +1,6 @@
 {
-    "name": "DCMCS — UET Mardan",
-    "short_name": "DCMCS",
+    "name": "Student Facilitation App — UET Mardan",
+    "short_name": "Student Facilitation",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

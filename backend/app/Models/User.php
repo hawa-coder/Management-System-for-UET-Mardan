@@ -27,8 +27,12 @@ class User extends Authenticatable
         'registration_number',
         'department',
         'batch',
+        'semester',
         'section',
+        'mobile_number',
+        'batch_adviser_id',
         'is_active',
+        'account_status',
     ];
 
     /**
@@ -58,6 +62,16 @@ class User extends Authenticatable
     public function complaints()
     {
         return $this->hasMany(Complaint::class);
+    }
+
+    public function batchAdviser()
+    {
+        return $this->belongsTo(self::class, 'batch_adviser_id');
+    }
+
+    public function advisedStudents()
+    {
+        return $this->hasMany(self::class, 'batch_adviser_id');
     }
 
     public function appNotifications()

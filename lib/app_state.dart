@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'api_service.dart';
+import 'dart:typed_data';
 
 const navy = Color(0xFF0B1F3A);
 const green = Color(0xFF16A085);
@@ -57,11 +58,14 @@ class Complaint {
     this.status = Status.submitted,
     this.handler = 'Batch Adviser',
     List<String>? history,
+    this.attachmentName,
+    this.attachmentUrl,
   }) : history = history ?? ['Complaint submitted'];
 
   final int? backendId;
   final String id, title, details, category, priority;
   final DateTime createdAt;
+  final String? attachmentName, attachmentUrl;
   Status status;
   String handler;
   final List<String> history;
@@ -91,6 +95,8 @@ class Complaint {
                     .firstOrNull ??
                 handler,
       history: history.isEmpty ? ['Complaint submitted'] : history,
+      attachmentName: json['attachment_name']?.toString(),
+      attachmentUrl: json['attachment_url']?.toString(),
     );
   }
 }
@@ -171,6 +177,8 @@ class Store extends ChangeNotifier {
   Role role = Role.student;
   int tab = 0;
   Map<String, dynamic>? authenticatedUser;
+  final pendingStudents = <Map<String, dynamic>>[];
+  final adviserApprovals = <Map<String, dynamic>>[];
 
   String get displayName =>
       authenticatedUser?['name']?.toString() ?? studentName;
@@ -180,7 +188,16 @@ class Store extends ChangeNotifier {
       authenticatedUser?['registration_number']?.toString() ??
       studentRegistrationNumber;
   String get displayBatch => authenticatedUser?['batch']?.toString() ?? '2023';
+  String get displaySemester =>
+      authenticatedUser?['semester']?.toString() ?? '';
   String get displaySection => authenticatedUser?['section']?.toString() ?? 'A';
+  String get displayMobileNumber =>
+      authenticatedUser?['mobile_number']?.toString() ?? '';
+  String get displayBatchAdviser =>
+      (authenticatedUser?['batch_adviser'] as Map?)?['name']?.toString() ??
+      'Not assigned';
+  bool get studentApproved =>
+      role != Role.student || authenticatedUser?['account_status'] == 'approved';
 
   final complaints = <Complaint>[
     Complaint(
@@ -249,7 +266,7 @@ class Store extends ChangeNotifier {
     ),
     AppNotification(
       title: 'Account signed in',
-      message: 'Your university account was used to access DCMCS.',
+      message: 'Your university account was used to access Student Facilitation App.',
       time: '2 days ago',
       type: NotificationType.account,
       isRead: true,
@@ -317,6 +334,11 @@ class Store extends ChangeNotifier {
         api.fetchComplaints(),
         api.fetchNotifications(),
         api.fetchNotices(),
+        role == Role.adviser
+            ? api.fetchPendingStudents()
+            : role == Role.coordinator
+            ? api.fetchAdviserApprovals()
+            : Future.value(<Map<String, dynamic>>[]),
       ]);
       complaints
         ..clear()
@@ -327,6 +349,20 @@ class Store extends ChangeNotifier {
       notices
         ..clear()
         ..addAll(results[2].map(DepartmentNotice.fromJson));
+      pendingStudents
+        ..clear()
+        ..addAll(
+          role == Role.adviser
+              ? results[3].map((item) => Map<String, dynamic>.from(item))
+              : const [],
+        );
+      adviserApprovals
+        ..clear()
+        ..addAll(
+          role == Role.coordinator
+              ? results[3].map((item) => Map<String, dynamic>.from(item))
+              : const [],
+        );
     } on ApiException catch (error) {
       dataError = error.message;
     } catch (_) {
@@ -357,12 +393,70 @@ class Store extends ChangeNotifier {
       return false;
     } catch (_) {
       authenticationError =
-          'Cannot connect to the DCMCS server. Please try again.';
+          'Cannot connect to the Student Facilitation App server. Please try again.';
       return false;
     } finally {
       authenticating = false;
       notifyListeners();
     }
+  }
+
+  Future<bool> register({
+    required String name,
+    required String email,
+    required String registrationNumber,
+    required int semester,
+    required String section,
+    required String mobileNumber,
+    required int batchAdviserId,
+    required String password,
+  }) async {
+    authenticating = true;
+    authenticationError = null;
+    notifyListeners();
+    try {
+      await api.register(
+        name: name,
+        email: email,
+        registrationNumber: registrationNumber,
+        semester: semester,
+        section: section,
+        mobileNumber: mobileNumber,
+        batchAdviserId: batchAdviserId,
+        password: password,
+      );
+      return true;
+    } on ApiException catch (error) {
+      authenticationError = error.message;
+      return false;
+    } catch (_) {
+      authenticationError =
+          'Cannot connect to the Student Facilitation App server. Please try again.';
+      return false;
+    } finally {
+      authenticating = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> reviewStudent(int studentId, String action) async {
+    await api.reviewStudent(studentId, action);
+    pendingStudents.removeWhere((student) => student['id'] == studentId);
+    notifyListeners();
+  }
+
+  Future<void> reviewAdviser(int adviserId, String action) async {
+    await api.reviewAdviser(adviserId, action);
+    final adviser = adviserApprovals.firstWhere(
+      (item) => item['id'] == adviserId,
+    );
+    adviser['account_status'] = action == 'approve' ? 'approved' : 'rejected';
+    notifyListeners();
+  }
+
+  Future<void> checkApprovalStatus() async {
+    authenticatedUser = await api.fetchProfile();
+    notifyListeners();
   }
 
   Future<void> logout() async {
@@ -382,13 +476,21 @@ class Store extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> add(Complaint complaint) async {
-    final created = await api.createComplaint({
-      'title': complaint.title,
-      'details': complaint.details,
-      'category': complaint.category,
-      'priority': complaint.priority,
-    });
+  Future<void> add(
+    Complaint complaint, {
+    Uint8List? attachmentBytes,
+    String? attachmentName,
+  }) async {
+    final created = await api.createComplaint(
+      {
+        'title': complaint.title,
+        'details': complaint.details,
+        'category': complaint.category,
+        'priority': complaint.priority,
+      },
+      attachmentBytes: attachmentBytes,
+      attachmentName: attachmentName,
+    );
     complaints.insert(0, Complaint.fromJson(created));
     await _refreshNotifications();
     notifyListeners();

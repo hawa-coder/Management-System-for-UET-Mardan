@@ -47,8 +47,11 @@ class ComplaintApiTest extends TestCase
 
     public function test_adviser_can_forward_an_assigned_complaint(): void
     {
-        $student = User::factory()->create(['role' => 'student']);
         $adviser = User::factory()->create(['role' => 'adviser']);
+        $student = User::factory()->create([
+            'role' => 'student',
+            'batch_adviser_id' => $adviser->id,
+        ]);
         $complaint = Complaint::create([
             'complaint_number' => 'CMP-TEST-0002',
             'user_id' => $student->id,
@@ -63,5 +66,51 @@ class ComplaintApiTest extends TestCase
         $this->postJson('/api/complaints/'.$complaint->id.'/transition', [
             'action' => 'forward_coordinator',
         ])->assertOk()->assertJsonPath('current_handler_role', 'coordinator');
+    }
+
+    public function test_adviser_can_accept_resolve_and_reject_assigned_complaints(): void
+    {
+        $adviser = User::factory()->create(['role' => 'adviser']);
+        $student = User::factory()->create([
+            'role' => 'student',
+            'batch_adviser_id' => $adviser->id,
+        ]);
+        Sanctum::actingAs($adviser);
+
+        foreach (['accept' => 'review', 'resolve' => 'resolved', 'reject' => 'rejected'] as $action => $status) {
+            $complaint = Complaint::create([
+                'complaint_number' => 'CMP-'.$action,
+                'user_id' => $student->id,
+                'title' => 'Academic issue',
+                'details' => 'An academic complaint.',
+                'category' => 'Academic',
+                'priority' => 'Medium',
+                'current_handler_role' => 'adviser',
+            ]);
+
+            $this->postJson('/api/complaints/'.$complaint->id.'/transition', [
+                'action' => $action,
+            ])->assertOk()->assertJsonPath('status', $status);
+        }
+    }
+
+    public function test_student_cannot_change_complaint_status(): void
+    {
+        $student = User::factory()->create(['role' => 'student']);
+        $complaint = Complaint::create([
+            'complaint_number' => 'CMP-STUDENT-ACTION',
+            'user_id' => $student->id,
+            'title' => 'Academic issue',
+            'details' => 'An academic complaint.',
+            'category' => 'Academic',
+            'priority' => 'Medium',
+        ]);
+        Sanctum::actingAs($student);
+
+        foreach (['accept', 'resolve', 'reject'] as $action) {
+            $this->postJson('/api/complaints/'.$complaint->id.'/transition', [
+                'action' => $action,
+            ])->assertForbidden();
+        }
     }
 }

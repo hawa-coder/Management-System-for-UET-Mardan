@@ -1,4 +1,4 @@
-# DCMCS
+# Student Facilitation App
 
 Department Complaint Management & Communication System for UET Mardan.
 

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'app_state.dart';
 import 'api_service.dart';
@@ -26,7 +28,7 @@ class _DcmcsAppState extends State<DcmcsApp> {
     animation: store,
     builder: (_, child) => MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'DCMCS',
+      title: 'Student Facilitation App',
       theme: ThemeData(
         useMaterial3: true,
         scaffoldBackgroundColor: canvas,
@@ -247,23 +249,91 @@ class Login extends StatefulWidget {
 
 class _LoginState extends State<Login> {
   final formKey = GlobalKey<FormState>();
+  final name = TextEditingController();
   final email = TextEditingController();
+  final registrationNumber = TextEditingController();
+  final mobileNumber = TextEditingController();
   final password = TextEditingController();
+  final confirmPassword = TextEditingController();
   Role role = Role.student;
+  int? semester;
+  String? section;
+  int? batchAdviserId;
+  List<Map<String, dynamic>> advisers = const [];
+  bool loadingAdvisers = false;
   bool hidePassword = true;
+  bool createAccount = false;
+
+  @override
+  void initState() {
+    super.initState();
+    loadAdvisers();
+  }
+
+  Future<void> loadAdvisers() async {
+    setState(() => loadingAdvisers = true);
+    try {
+      final result = await widget.store.api.fetchAdvisers();
+      if (mounted) setState(() => advisers = result);
+    } catch (_) {
+      if (mounted) {
+        setState(() => advisers = const []);
+      }
+    } finally {
+      if (mounted) setState(() => loadingAdvisers = false);
+    }
+  }
 
   @override
   void dispose() {
+    name.dispose();
     email.dispose();
+    registrationNumber.dispose();
+    mobileNumber.dispose();
     password.dispose();
+    confirmPassword.dispose();
     super.dispose();
   }
 
   Future<void> submit() async {
     FocusScope.of(context).unfocus();
     if (formKey.currentState?.validate() ?? false) {
-      await widget.store.login(email.text, password.text, role);
+      if (createAccount) {
+        final created = await widget.store.register(
+          name: name.text,
+          email: email.text,
+          registrationNumber: registrationNumber.text,
+          semester: semester!,
+          section: section!,
+          mobileNumber: mobileNumber.text,
+          batchAdviserId: batchAdviserId!,
+          password: password.text,
+        );
+        if (created && mounted) {
+          changeMode(false);
+          password.clear();
+          confirmPassword.clear();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Account submitted. You can sign in after your batch adviser approves it.',
+              ),
+            ),
+          );
+        }
+      } else {
+        await widget.store.login(email.text, password.text, role);
+      }
     }
+  }
+
+  void changeMode(bool value) {
+    setState(() {
+      createAccount = value;
+      role = Role.student;
+      widget.store.authenticationError = null;
+      formKey.currentState?.reset();
+    });
   }
 
   String? validateEmail(String? value) {
@@ -275,6 +345,9 @@ class _LoginState extends State<Login> {
 
     final localPart = input.split('@').first;
     final looksLikeStudent = RegExp(r'^\d').hasMatch(localPart);
+    if (createAccount && !looksLikeStudent) {
+      return 'Student email must begin with your registration digits.';
+    }
     if (role == Role.student && !looksLikeStudent) {
       return 'Select the staff role assigned to this account.';
     }
@@ -296,6 +369,14 @@ class _LoginState extends State<Login> {
     }
     return null;
   }
+
+  String? requiredField(String? value, String label) =>
+      (value?.trim().isEmpty ?? true) ? '$label is required.' : null;
+
+  String? validateMobile(String? value) =>
+      RegExp(r'^03\d{9}$').hasMatch(value?.trim() ?? '')
+      ? null
+      : 'Enter a valid 11-digit mobile number.';
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -365,7 +446,7 @@ class _LoginState extends State<Login> {
                       const SizedBox(height: 34),
                       const Center(
                         child: Text(
-                          'Welcome Back',
+                          'Student Access',
                           style: TextStyle(
                             fontSize: 27,
                             fontWeight: FontWeight.w800,
@@ -373,13 +454,52 @@ class _LoginState extends State<Login> {
                           ),
                         ),
                       ),
-                      const Center(
+                      Center(
                         child: Text(
-                          'Log in to track your complaints',
-                          style: TextStyle(color: Color(0xFF8B93A5)),
+                          createAccount
+                              ? 'Create your student account'
+                              : 'Sign in to track your complaints',
+                          style: const TextStyle(color: Color(0xFF8B93A5)),
                         ),
                       ),
                       const SizedBox(height: 28),
+                      SegmentedButton<bool>(
+                        segments: const [
+                          ButtonSegment(
+                            value: false,
+                            icon: Icon(Icons.login),
+                            label: Text('Sign in'),
+                          ),
+                          ButtonSegment(
+                            value: true,
+                            icon: Icon(Icons.person_add_alt_1_outlined),
+                            label: Text('Create account'),
+                          ),
+                        ],
+                        selected: {createAccount},
+                        onSelectionChanged: widget.store.authenticating
+                            ? null
+                            : (value) => changeMode(value.first),
+                        showSelectedIcon: false,
+                        style: const ButtonStyle(
+                          visualDensity: VisualDensity(vertical: 2),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      if (createAccount) ...[
+                        TextFormField(
+                          controller: name,
+                          textCapitalization: TextCapitalization.words,
+                          textInputAction: TextInputAction.next,
+                          decoration: const InputDecoration(
+                            labelText: 'Full name',
+                            prefixIcon: Icon(Icons.person_outline),
+                          ),
+                          validator: (value) =>
+                              requiredField(value, 'Full name'),
+                        ),
+                        const SizedBox(height: 14),
+                      ],
                       TextFormField(
                         controller: email,
                         keyboardType: TextInputType.emailAddress,
@@ -397,14 +517,122 @@ class _LoginState extends State<Login> {
                         validator: validateEmail,
                       ),
                       const SizedBox(height: 14),
+                      if (createAccount) ...[
+                        TextFormField(
+                          controller: registrationNumber,
+                          textCapitalization: TextCapitalization.characters,
+                          textInputAction: TextInputAction.next,
+                          decoration: const InputDecoration(
+                            labelText: 'Registration number',
+                            prefixIcon: Icon(Icons.badge_outlined),
+                          ),
+                          validator: (value) =>
+                              requiredField(value, 'Registration number'),
+                        ),
+                        const SizedBox(height: 14),
+                        Row(
+                          children: [
+                            Expanded(
+                              flex: 3,
+                              child: DropdownButtonFormField<int>(
+                                isExpanded: true,
+                                initialValue: semester,
+                                decoration: const InputDecoration(
+                                  labelText: 'Semester',
+                                  prefixIcon: Icon(Icons.school_outlined),
+                                ),
+                                items: List.generate(
+                                  8,
+                                  (index) => DropdownMenuItem(
+                                    value: index + 1,
+                                    child: Text('Semester ${index + 1}'),
+                                  ),
+                                ),
+                                onChanged: (value) => setState(() {
+                                  semester = value;
+                                }),
+                                validator: (value) => value == null
+                                    ? 'Select semester.'
+                                    : null,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              flex: 2,
+                              child: DropdownButtonFormField<String>(
+                                isExpanded: true,
+                                initialValue: section,
+                                decoration: const InputDecoration(
+                                  labelText: 'Section',
+                                ),
+                                items: const ['A', 'B', 'C', 'D', 'AI', 'DS', 'CS']
+                                    .map(
+                                      (value) => DropdownMenuItem(
+                                        value: value,
+                                        child: Text(value),
+                                      ),
+                                    )
+                                    .toList(),
+                                onChanged: (value) => setState(() {
+                                  section = value;
+                                }),
+                                validator: (value) =>
+                                    value == null ? 'Select section.' : null,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
+                        DropdownButtonFormField<int>(
+                          isExpanded: true,
+                          menuMaxHeight: 320,
+                          initialValue: batchAdviserId,
+                          decoration: const InputDecoration(
+                            labelText: 'Choose batch adviser',
+                            prefixIcon: Icon(Icons.supervisor_account_outlined),
+                          ),
+                          items: advisers.map((adviser) {
+                            return DropdownMenuItem<int>(
+                              value: adviser['id'] as int,
+                              child: Text(
+                                adviser['name']?.toString() ?? 'Batch adviser',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            );
+                          }).toList(),
+                          onChanged: loadingAdvisers
+                              ? null
+                              : (value) => setState(() => batchAdviserId = value),
+                          validator: (value) => value == null
+                              ? 'Choose your batch adviser.'
+                              : null,
+                        ),
+                        const SizedBox(height: 14),
+                        TextFormField(
+                          controller: mobileNumber,
+                          keyboardType: TextInputType.phone,
+                          textInputAction: TextInputAction.next,
+                          maxLength: 11,
+                          decoration: const InputDecoration(
+                            labelText: 'Mobile number',
+                            hintText: '03XXXXXXXXX',
+                            counterText: '',
+                            prefixIcon: Icon(Icons.phone_outlined),
+                          ),
+                          validator: validateMobile,
+                        ),
+                        const SizedBox(height: 14),
+                      ],
                       TextFormField(
                         controller: password,
                         obscureText: hidePassword,
-                        textInputAction: TextInputAction.done,
+                        textInputAction: createAccount
+                            ? TextInputAction.next
+                            : TextInputAction.done,
                         autofillHints: const [AutofillHints.password],
                         autocorrect: false,
                         enableSuggestions: false,
-                        onFieldSubmitted: (_) => submit(),
+                        onFieldSubmitted: createAccount ? null : (_) => submit(),
                         decoration: InputDecoration(
                           labelText: 'Password',
                           prefixIcon: const Icon(Icons.lock_outline),
@@ -423,39 +651,57 @@ class _LoginState extends State<Login> {
                         ),
                         validator: validatePassword,
                       ),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton(
-                          onPressed: () =>
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    'Password recovery will be available after mail service configuration.',
-                                  ),
+                      if (createAccount) ...[
+                        const SizedBox(height: 14),
+                        TextFormField(
+                          controller: confirmPassword,
+                          obscureText: hidePassword,
+                          textInputAction: TextInputAction.done,
+                          onFieldSubmitted: (_) => submit(),
+                          decoration: const InputDecoration(
+                            labelText: 'Confirm password',
+                            prefixIcon: Icon(Icons.lock_outline),
+                          ),
+                          validator: (value) => value != password.text
+                              ? 'Passwords do not match.'
+                              : null,
+                        ),
+                      ],
+                      if (!createAccount)
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton(
+                            onPressed: () => showDialog(
+                              context: context,
+                              builder: (_) => ForgotPasswordDialog(
+                                widget.store.api,
+                                initialEmail: email.text,
+                              ),
+                            ),
+                            child: const Text('Forgot Password?'),
+                          ),
+                        ),
+                      if (!createAccount) ...[
+                        const SizedBox(height: 14),
+                        DropdownButtonFormField<Role>(
+                          initialValue: role,
+                          decoration: const InputDecoration(
+                            labelText: 'Portal role',
+                            prefixIcon: Icon(Icons.badge_outlined),
+                          ),
+                          items: Role.values
+                              .map(
+                                (r) => DropdownMenuItem(
+                                  value: r,
+                                  child: Text(r.label),
                                 ),
-                              ),
-                          child: const Text('Forgot Password?'),
+                              )
+                              .toList(),
+                          onChanged: widget.store.authenticating
+                              ? null
+                              : (v) => setState(() => role = v!),
                         ),
-                      ),
-                      const SizedBox(height: 14),
-                      DropdownButtonFormField<Role>(
-                        initialValue: role,
-                        decoration: const InputDecoration(
-                          labelText: 'Portal role',
-                          prefixIcon: Icon(Icons.badge_outlined),
-                        ),
-                        items: Role.values
-                            .map(
-                              (r) => DropdownMenuItem(
-                                value: r,
-                                child: Text(r.label),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: widget.store.authenticating
-                            ? null
-                            : (v) => setState(() => role = v!),
-                      ),
+                      ],
                       if (widget.store.authenticationError != null)
                         Padding(
                           padding: const EdgeInsets.only(top: 12),
@@ -490,10 +736,25 @@ class _LoginState extends State<Login> {
                                   color: Colors.white,
                                 ),
                               )
-                            : const Text(
-                                'Log In',
-                                style: TextStyle(fontWeight: FontWeight.w700),
+                            : Text(
+                                createAccount ? 'Create Account' : 'Sign In',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
+                      ),
+                      const SizedBox(height: 10),
+                      Center(
+                        child: TextButton(
+                          onPressed: widget.store.authenticating
+                              ? null
+                              : () => changeMode(!createAccount),
+                          child: Text(
+                            createAccount
+                                ? 'Already have an account? Sign in'
+                                : "Don't have an account? Create one",
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -553,7 +814,7 @@ class Shell extends StatelessWidget {
             const SizedBox(width: 9),
             Expanded(
               child: Text(
-                'DCMCS · ${store.role.label}',
+                'Student Facilitation App · ${store.role.label}',
                 style: const TextStyle(
                   fontWeight: FontWeight.w700,
                   fontSize: 17,
@@ -584,12 +845,20 @@ class Shell extends StatelessWidget {
       body: pages[store.tab],
       floatingActionButton: store.role == Role.student && store.tab == 1
           ? FloatingActionButton.extended(
-              backgroundColor: green,
+              backgroundColor: store.studentApproved ? green : Colors.grey,
               foregroundColor: Colors.white,
-              onPressed: () => showDialog(
-                context: context,
-                builder: (_) => NewComplaint(store),
-              ),
+              onPressed: store.studentApproved
+                  ? () => showDialog(
+                      context: context,
+                      builder: (_) => NewComplaint(store),
+                    )
+                  : () => ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'You can submit complaints after your batch adviser approves your account.',
+                        ),
+                      ),
+                    ),
               icon: const Icon(Icons.add),
               label: const Text('New complaint'),
             )
@@ -828,6 +1097,47 @@ class Dashboard extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 18),
+        if (store.role == Role.student && !store.studentApproved) ...[
+          Card(
+            color: const Color(0xFFFFF4D6),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.hourglass_top, color: Color(0xFF9A6700)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Waiting for batch adviser approval',
+                          style: TextStyle(
+                            color: Color(0xFF704D00),
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${store.displayBatchAdviser} must approve your account. You can view the dashboard, notices, and profile, but you cannot submit a complaint yet.',
+                          style: const TextStyle(color: Color(0xFF704D00)),
+                        ),
+                        const SizedBox(height: 8),
+                        TextButton.icon(
+                          onPressed: store.checkApprovalStatus,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Check approval status'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 18),
+        ],
         GridView.count(
           crossAxisCount: MediaQuery.sizeOf(context).width > 700 ? 4 : 2,
           shrinkWrap: true,
@@ -842,14 +1152,166 @@ class Dashboard extends StatelessWidget {
             Stat('Resolved', '$resolved', Icons.task_alt, Colors.green),
             const Stat('Notices', '2', Icons.campaign, Colors.orange),
             Stat(
-              store.role == Role.student ? 'Adviser' : 'Students',
-              store.role == Role.student ? 'Assigned' : '128',
+              store.role == Role.student
+                  ? 'Adviser'
+                  : store.role == Role.coordinator
+                  ? 'Adviser requests'
+                  : 'Students',
+              store.role == Role.student
+                  ? store.studentApproved
+                        ? 'Approved'
+                        : 'Waiting'
+                  : store.role == Role.coordinator
+                  ? '${store.adviserApprovals.where((a) => a['account_status'] == 'pending').length}'
+                  : '${store.pendingStudents.length}',
               Icons.groups_outlined,
               Colors.purple,
             ),
           ],
         ),
         const SizedBox(height: 24),
+        if (store.role == Role.adviser) ...[
+          const SectionTitle('Student account approvals'),
+          const SizedBox(height: 8),
+          if (store.pendingStudents.isEmpty)
+            const Card(
+              child: Padding(
+                padding: EdgeInsets.all(18),
+                child: Text('No student accounts are waiting for approval.'),
+              ),
+            )
+          else
+            ...store.pendingStudents.map(
+              (student) => Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        student['name']?.toString() ?? 'Student',
+                        style: const TextStyle(
+                          color: navy,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        '${student['registration_number'] ?? ''} · Semester ${student['semester'] ?? ''} · Section ${student['section'] ?? ''}',
+                        style: const TextStyle(color: Colors.black54),
+                      ),
+                      Text(
+                        student['email']?.toString() ?? '',
+                        style: const TextStyle(color: Colors.black54),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          TextButton(
+                            onPressed: () async {
+                              await store.reviewStudent(
+                                student['id'] as int,
+                                'reject',
+                              );
+                            },
+                            child: const Text('Reject'),
+                          ),
+                          const SizedBox(width: 8),
+                          FilledButton.icon(
+                            onPressed: () async {
+                              await store.reviewStudent(
+                                student['id'] as int,
+                                'approve',
+                              );
+                            },
+                            icon: const Icon(Icons.check),
+                            label: const Text('Approve'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          const SizedBox(height: 18),
+        ],
+        if (store.role == Role.coordinator) ...[
+          const SectionTitle('Batch adviser approvals'),
+          const SizedBox(height: 8),
+          if (store.adviserApprovals.isEmpty)
+            const Card(
+              child: Padding(
+                padding: EdgeInsets.all(18),
+                child: Text('No batch adviser accounts are available.'),
+              ),
+            )
+          else
+            ...store.adviserApprovals.map((adviser) {
+              final status = adviser['account_status']?.toString() ?? 'pending';
+              return Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              adviser['name']?.toString() ?? 'Batch adviser',
+                              style: const TextStyle(
+                                color: navy,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                          Chip(label: Text(status.toUpperCase())),
+                        ],
+                      ),
+                      Text(
+                        '${adviser['batch'] ?? ''} · Semester ${adviser['semester'] ?? ''} · Section ${adviser['section'] ?? ''}',
+                        style: const TextStyle(color: Colors.black54),
+                      ),
+                      Text(
+                        adviser['email']?.toString() ?? '',
+                        style: const TextStyle(color: Colors.black54),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          if (status != 'rejected')
+                            TextButton(
+                              onPressed: () => store.reviewAdviser(
+                                adviser['id'] as int,
+                                'reject',
+                              ),
+                              child: const Text('Reject'),
+                            ),
+                          if (status != 'approved') ...[
+                            const SizedBox(width: 8),
+                            FilledButton.icon(
+                              onPressed: () => store.reviewAdviser(
+                                adviser['id'] as int,
+                                'approve',
+                              ),
+                              icon: const Icon(Icons.check),
+                              label: const Text('Approve'),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+          const SizedBox(height: 18),
+        ],
         SectionTitle('Recent complaints', action: () => store.go(1)),
         const SizedBox(height: 8),
         ...store.complaints.take(3).map((c) => ComplaintCard(store, c)),
@@ -1115,6 +1577,28 @@ class Detail extends StatelessWidget {
         const SizedBox(height: 14),
         Text(c.details, style: const TextStyle(height: 1.5)),
         const SizedBox(height: 18),
+        if (c.attachmentUrl != null) ...[
+          OutlinedButton.icon(
+            onPressed: () async {
+              final opened = await launchUrl(
+                Uri.parse(store.api.absoluteUrl(c.attachmentUrl!)),
+                mode: LaunchMode.externalApplication,
+              );
+              if (!opened && context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Unable to open attachment.')),
+                );
+              }
+            },
+            icon: Icon(
+              c.attachmentName?.toLowerCase().endsWith('.pdf') ?? false
+                  ? Icons.picture_as_pdf_outlined
+                  : Icons.image_outlined,
+            ),
+            label: Text(c.attachmentName ?? 'Open attachment'),
+          ),
+          const SizedBox(height: 18),
+        ],
         Card(
           child: Padding(
             padding: const EdgeInsets.all(16),
@@ -1194,6 +1678,9 @@ class Detail extends StatelessWidget {
         child: Text(text),
       ),
     );
+    if (c.status != Status.review) {
+      add('Accept', 'accept');
+    }
     if (store.role == Role.adviser) {
       add('Forward to coordinator', 'forward_coordinator');
     }
@@ -1203,12 +1690,12 @@ class Detail extends StatelessWidget {
     if (store.role == Role.chairman) {
       add('Send to office', 'send_office');
       add('Send to dean', 'send_dean');
-      add('Resolve', 'resolve');
-      add('Reject', 'reject');
     }
     if (store.role == Role.office || store.role == Role.dean) {
       add('Return to chairman', 'return_chairman');
     }
+    add('Resolve', 'resolve');
+    add('Reject', 'reject');
     return out;
   }
 }
@@ -1244,6 +1731,23 @@ class _NewComplaintState extends State<NewComplaint> {
   String category = 'Academic', priority = 'Medium';
   bool submitting = false;
   String? error;
+  PlatformFile? attachment;
+
+  Future<void> chooseAttachment() async {
+    final file = await FilePicker.pickFile(
+      type: FileType.custom,
+      allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png'],
+    );
+    if (file == null || !mounted) return;
+    if (await file.length() > 10 * 1024 * 1024) {
+      setState(() => error = 'Attachment must not exceed 10 MB.');
+      return;
+    }
+    setState(() {
+      attachment = file;
+      error = null;
+    });
+  }
 
   @override
   void dispose() {
@@ -1301,6 +1805,25 @@ class _NewComplaintState extends State<NewComplaint> {
               ].map((x) => DropdownMenuItem(value: x, child: Text(x))).toList(),
               onChanged: (v) => priority = v!,
             ),
+            const SizedBox(height: 11),
+            OutlinedButton.icon(
+              onPressed: submitting ? null : chooseAttachment,
+              icon: const Icon(Icons.attach_file),
+              label: Text(
+                attachment == null
+                    ? 'Attach image or PDF (optional)'
+                    : attachment!.name,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (attachment != null)
+              TextButton.icon(
+                onPressed: submitting
+                    ? null
+                    : () => setState(() => attachment = null),
+                icon: const Icon(Icons.close, size: 18),
+                label: const Text('Remove attachment'),
+              ),
             if (error != null)
               Padding(
                 padding: const EdgeInsets.only(top: 12),
@@ -1336,6 +1859,10 @@ class _NewComplaintState extends State<NewComplaint> {
                       priority: priority,
                       createdAt: DateTime.now(),
                     ),
+                    attachmentBytes: attachment == null
+                        ? null
+                        : await attachment!.readAsBytes(),
+                    attachmentName: attachment?.name,
                   );
                   if (context.mounted) Navigator.pop(context);
                 } on ApiException catch (exception) {
@@ -1498,12 +2025,31 @@ class Profile extends StatelessWidget {
                     '${store.displayBatch} · ${store.displaySection}',
                   ),
                 ),
-                const ListTile(
-                  leading: Icon(Icons.school_outlined),
-                  title: Text('Batch adviser'),
-                  trailing: Text('Dr. Ahmad'),
+                ListTile(
+                  leading: const Icon(Icons.menu_book_outlined),
+                  title: const Text('Semester'),
+                  trailing: Text(store.displaySemester),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.phone_outlined),
+                  title: const Text('Mobile number'),
+                  trailing: Text(store.displayMobileNumber),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.school_outlined),
+                  title: const Text('Batch adviser'),
+                  trailing: Text(store.displayBatchAdviser),
                 ),
               ],
+              ListTile(
+                leading: const Icon(Icons.password_outlined),
+                title: const Text('Change password'),
+                subtitle: const Text('Requires your current password'),
+                onTap: () => showDialog(
+                  context: context,
+                  builder: (_) => ChangePasswordDialog(store.api),
+                ),
+              ),
               ListTile(
                 leading: const Icon(Icons.logout, color: Colors.red),
                 title: const Text(
@@ -1515,6 +2061,141 @@ class Profile extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    ],
+  );
+}
+
+class ChangePasswordDialog extends StatefulWidget {
+  const ChangePasswordDialog(this.api, {super.key});
+  final ApiService api;
+  @override
+  State<ChangePasswordDialog> createState() => _ChangePasswordDialogState();
+}
+
+class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
+  final current = TextEditingController();
+  final password = TextEditingController();
+  final confirm = TextEditingController();
+  bool saving = false;
+  String? error;
+
+  @override
+  void dispose() {
+    current.dispose();
+    password.dispose();
+    confirm.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Change password'),
+    content: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        TextField(controller: current, obscureText: true, decoration: const InputDecoration(labelText: 'Current password')),
+        const SizedBox(height: 10),
+        TextField(controller: password, obscureText: true, decoration: const InputDecoration(labelText: 'New password')),
+        const SizedBox(height: 10),
+        TextField(controller: confirm, obscureText: true, decoration: const InputDecoration(labelText: 'Confirm new password')),
+        if (error != null) Padding(padding: const EdgeInsets.only(top: 10), child: Text(error!, style: const TextStyle(color: Colors.red))),
+      ],
+    ),
+    actions: [
+      TextButton(onPressed: saving ? null : () => Navigator.pop(context), child: const Text('Cancel')),
+      FilledButton(
+        onPressed: saving ? null : () async {
+          if (password.text != confirm.text) {
+            setState(() => error = 'New passwords do not match.');
+            return;
+          }
+          setState(() { saving = true; error = null; });
+          try {
+            final message = await widget.api.changePassword(currentPassword: current.text, password: password.text);
+            if (context.mounted) {
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+            }
+          } on ApiException catch (exception) {
+            if (mounted) setState(() => error = exception.message);
+          } finally {
+            if (mounted) setState(() => saving = false);
+          }
+        },
+        child: Text(saving ? 'Saving...' : 'Change password'),
+      ),
+    ],
+  );
+}
+
+class ForgotPasswordDialog extends StatefulWidget {
+  const ForgotPasswordDialog(this.api, {this.initialEmail = '', super.key});
+  final ApiService api;
+  final String initialEmail;
+  @override
+  State<ForgotPasswordDialog> createState() => _ForgotPasswordDialogState();
+}
+
+class _ForgotPasswordDialogState extends State<ForgotPasswordDialog> {
+  late final email = TextEditingController(text: widget.initialEmail);
+  final code = TextEditingController();
+  final password = TextEditingController();
+  final confirm = TextEditingController();
+  bool codeSent = false, saving = false;
+  String? error, info;
+
+  @override
+  void dispose() {
+    email.dispose(); code.dispose(); password.dispose(); confirm.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: Text(codeSent ? 'Enter reset code' : 'Forgot password'),
+    content: SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(controller: email, enabled: !codeSent, decoration: const InputDecoration(labelText: 'University email')),
+          if (codeSent) ...[
+            const SizedBox(height: 10),
+            TextField(controller: code, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Six-digit code')),
+            const SizedBox(height: 10),
+            TextField(controller: password, obscureText: true, decoration: const InputDecoration(labelText: 'New password')),
+            const SizedBox(height: 10),
+            TextField(controller: confirm, obscureText: true, decoration: const InputDecoration(labelText: 'Confirm new password')),
+          ],
+          if (info != null) Padding(padding: const EdgeInsets.only(top: 10), child: Text(info!, style: const TextStyle(color: green))),
+          if (error != null) Padding(padding: const EdgeInsets.only(top: 10), child: Text(error!, style: const TextStyle(color: Colors.red))),
+        ],
+      ),
+    ),
+    actions: [
+      TextButton(onPressed: saving ? null : () => Navigator.pop(context), child: const Text('Cancel')),
+      FilledButton(
+        onPressed: saving ? null : () async {
+          setState(() { saving = true; error = null; });
+          try {
+            if (!codeSent) {
+              final message = await widget.api.forgotPassword(email.text);
+              if (mounted) setState(() { codeSent = true; info = message; });
+            } else {
+              if (password.text != confirm.text) throw const ApiException('New passwords do not match.');
+              final message = await widget.api.resetPassword(email: email.text, code: code.text, password: password.text);
+              if (context.mounted) {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+              }
+            }
+          } on ApiException catch (exception) {
+            if (mounted) setState(() => error = exception.message);
+          } finally {
+            if (mounted) setState(() => saving = false);
+          }
+        },
+        child: Text(saving ? 'Please wait...' : codeSent ? 'Reset password' : 'Send code'),
       ),
     ],
   );

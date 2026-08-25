@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -66,6 +67,101 @@ class ApiService {
     );
   }
 
+  Future<void> register({
+    required String name,
+    required String email,
+    required String registrationNumber,
+    required int semester,
+    required String section,
+    required String mobileNumber,
+    required int batchAdviserId,
+    required String password,
+  }) async {
+    final response = await _client
+        .post(
+          Uri.parse('$baseUrl/register'),
+          headers: const {'Accept': 'application/json'},
+          body: {
+            'name': name.trim(),
+            'email': email.trim().toLowerCase(),
+            'registration_number': registrationNumber.trim().toUpperCase(),
+            'semester': semester.toString(),
+            'section': section.trim().toUpperCase(),
+            'mobile_number': mobileNumber.trim(),
+            'batch_adviser_id': batchAdviserId.toString(),
+            'password': password,
+            'password_confirmation': password,
+          },
+        )
+        .timeout(const Duration(seconds: 15));
+
+    final body = _decode(response);
+    if (response.statusCode != 201) {
+      throw ApiException(_errorMessage(body), response.statusCode);
+    }
+
+  }
+
+  Future<List<Map<String, dynamic>>> fetchAdvisers() async {
+    final body = await get('/advisers');
+    return (body['data'] as List? ?? const [])
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList();
+  }
+
+  Future<List<Map<String, dynamic>>> fetchPendingStudents() async {
+    final body = await get('/student-approvals');
+    return (body['data'] as List? ?? const [])
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList();
+  }
+
+  Future<void> reviewStudent(int studentId, String action) async {
+    await post('/student-approvals/$studentId', {'action': action});
+  }
+
+  Future<List<Map<String, dynamic>>> fetchAdviserApprovals() async {
+    final body = await get('/adviser-approvals');
+    return (body['data'] as List? ?? const [])
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList();
+  }
+
+  Future<void> reviewAdviser(int adviserId, String action) async {
+    await post('/adviser-approvals/$adviserId', {'action': action});
+  }
+
+  Future<String> forgotPassword(String email) async {
+    final body = await post('/forgot-password', {'email': email.trim().toLowerCase()});
+    return body['message']?.toString() ?? 'Reset code sent.';
+  }
+
+  Future<String> resetPassword({
+    required String email,
+    required String code,
+    required String password,
+  }) async {
+    final body = await post('/reset-password', {
+      'email': email.trim().toLowerCase(),
+      'code': code.trim(),
+      'password': password,
+      'password_confirmation': password,
+    });
+    return body['message']?.toString() ?? 'Password reset successfully.';
+  }
+
+  Future<String> changePassword({
+    required String currentPassword,
+    required String password,
+  }) async {
+    final body = await post('/change-password', {
+      'current_password': currentPassword,
+      'password': password,
+      'password_confirmation': password,
+    });
+    return body['message']?.toString() ?? 'Password changed successfully.';
+  }
+
   Future<void> logout() async {
     final token = _token ?? await _storage.read(key: 'auth_token');
     if (token != null) {
@@ -96,6 +192,8 @@ class ApiService {
     }
   }
 
+  Future<Map<String, dynamic>> fetchProfile() => get('/profile');
+
   Future<List<Map<String, dynamic>>> fetchComplaints() async {
     final body = await get('/complaints');
     return (body['data'] as List? ?? const [])
@@ -103,8 +201,37 @@ class ApiService {
         .toList();
   }
 
-  Future<Map<String, dynamic>> createComplaint(Map<String, dynamic> data) =>
-      post('/complaints', data);
+  Future<Map<String, dynamic>> createComplaint(
+    Map<String, dynamic> data, {
+    Uint8List? attachmentBytes,
+    String? attachmentName,
+  }) async {
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$baseUrl/complaints'),
+    );
+    request.headers.addAll(await _headers());
+    request.fields.addAll(
+      data.map((key, value) => MapEntry(key, value.toString())),
+    );
+    if (attachmentBytes != null && attachmentName != null) {
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'attachment',
+          attachmentBytes,
+          filename: attachmentName,
+        ),
+      );
+    }
+    final streamed = await request.send().timeout(const Duration(seconds: 30));
+    return _handle(await http.Response.fromStream(streamed));
+  }
+
+  String absoluteUrl(String path) {
+    if (path.startsWith('http://') || path.startsWith('https://')) return path;
+    final uri = Uri.parse(baseUrl);
+    return '${uri.scheme}://${uri.authority}${path.startsWith('/') ? path : '/$path'}';
+  }
 
   Future<Map<String, dynamic>> transitionComplaint(int id, String action) =>
       post('/complaints/$id/transition', {'action': action});
