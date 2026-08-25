@@ -21,7 +21,7 @@ class DatabaseSeeder extends Seeder
             ['Hawa Sabir', '2023cs001@uetmardan.edu.pk', 'student', 'Student@123', '2023-CS-001', 'A'],
             ['Coordinator', 'coordinator@uetmardan.edu.pk', 'coordinator', 'Coordinator@123', null, null],
             ['Usman', 'chairman@uetmardan.edu.pk', 'chairman', 'Chairman@123', null, null],
-            ['Office Staff', 'office@uetmardan.edu.pk', 'office', 'Office@123', null, null],
+            ['Department Staff', 'office@uetmardan.edu.pk', 'office', 'Office@123', null, null],
             ['Dean', 'dean@uetmardan.edu.pk', 'dean', 'Dean@123', null, null],
         ];
 

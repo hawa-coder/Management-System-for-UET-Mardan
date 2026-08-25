@@ -24,6 +24,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/complaints', [ComplaintController::class, 'store']);
     Route::get('/complaints/{complaint}', [ComplaintController::class, 'show']);
     Route::post('/complaints/{complaint}/transition', [ComplaintController::class, 'transition']);
+    Route::post('/complaints/{complaint}/comments', [ComplaintController::class, 'comment']);
+    Route::post('/complaints/{complaint}/publish-resolution', [ComplaintController::class, 'publishResolution']);
     Route::get('/notices', [NoticeController::class, 'index']);
     Route::post('/notices', [NoticeController::class, 'store']);
     Route::get('/notifications', [NotificationController::class, 'index']);
@@ -32,5 +34,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/student-approvals', [StudentApprovalController::class, 'index']);
     Route::post('/student-approvals/{student}', [StudentApprovalController::class, 'update']);
     Route::get('/adviser-approvals', [AdviserApprovalController::class, 'index']);
+    Route::post('/adviser-approvals', [AdviserApprovalController::class, 'store']);
     Route::post('/adviser-approvals/{adviser}', [AdviserApprovalController::class, 'update']);
 });

@@ -107,7 +107,7 @@ class AuthController extends Controller
 
         return response()->json([
             'token' => $token,
-            'user' => $user->load('batchAdviser:id,name'),
+            'user' => $this->withStudentCounts($user->load('batchAdviser:id,name')),
         ]);
     }
 
@@ -120,7 +120,28 @@ class AuthController extends Controller
 
     public function profile(Request $request)
     {
-        return response()->json($request->user()->load('batchAdviser:id,name'));
+        return response()->json(
+            $this->withStudentCounts($request->user()->load('batchAdviser:id,name'))
+        );
+    }
+
+    private function withStudentCounts(User $user): User
+    {
+        if ($user->role === 'adviser') {
+            $base = User::query()
+                ->where('role', 'student')
+                ->where('batch_adviser_id', $user->id);
+        } else {
+            $base = User::query()->where('role', 'student');
+        }
+
+        $user->setAttribute('total_students_count', (clone $base)->count());
+        $user->setAttribute(
+            'approved_students_count',
+            (clone $base)->where('account_status', 'approved')->count()
+        );
+
+        return $user;
     }
 
     public function changePassword(Request $request)

@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class Notice extends Model
 {
-    protected $fillable = ['published_by', 'title', 'body', 'audience', 'published_at'];
+    protected $fillable = ['complaint_id', 'published_by', 'title', 'body', 'audience', 'published_at'];
 
     protected function casts(): array
     {

@@ -131,6 +131,11 @@ class ApiService {
     await post('/adviser-approvals/$adviserId', {'action': action});
   }
 
+  Future<Map<String, dynamic>> addAdviser(Map<String, dynamic> data) async {
+    final body = await post('/adviser-approvals', data);
+    return Map<String, dynamic>.from(body['adviser'] as Map);
+  }
+
   Future<String> forgotPassword(String email) async {
     final body = await post('/forgot-password', {'email': email.trim().toLowerCase()});
     return body['message']?.toString() ?? 'Reset code sent.';
@@ -235,6 +240,18 @@ class ApiService {
 
   Future<Map<String, dynamic>> transitionComplaint(int id, String action) =>
       post('/complaints/$id/transition', {'action': action});
+
+  Future<Map<String, dynamic>> addComplaintComment(int id, String comment) =>
+      post('/complaints/$id/comments', {'comment': comment});
+
+  Future<Map<String, dynamic>> publishResolutionNotice(
+    int id, {
+    required String title,
+    required String body,
+  }) => post('/complaints/$id/publish-resolution', {
+    'title': title,
+    'body': body,
+  });
 
   Future<List<Map<String, dynamic>>> fetchNotifications() async {
     final body = await get('/notifications');

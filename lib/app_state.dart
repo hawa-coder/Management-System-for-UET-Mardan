@@ -21,7 +21,7 @@ extension RoleName on Role {
     'Batch Adviser',
     'Coordinator',
     'Chairman',
-    'Office Staff',
+    'Department Staff',
     'Dean',
   ][index];
 }
@@ -60,7 +60,9 @@ class Complaint {
     List<String>? history,
     this.attachmentName,
     this.attachmentUrl,
-  }) : history = history ?? ['Complaint submitted'];
+    List<ComplaintComment>? comments,
+  }) : history = history ?? ['Complaint submitted'],
+       comments = comments ?? [];
 
   final int? backendId;
   final String id, title, details, category, priority;
@@ -69,6 +71,7 @@ class Complaint {
   Status status;
   String handler;
   final List<String> history;
+  final List<ComplaintComment> comments;
 
   factory Complaint.fromJson(Map<String, dynamic> json) {
     final history = (json['history'] as List? ?? const [])
@@ -97,6 +100,31 @@ class Complaint {
       history: history.isEmpty ? ['Complaint submitted'] : history,
       attachmentName: json['attachment_name']?.toString(),
       attachmentUrl: json['attachment_url']?.toString(),
+      comments: (json['comments'] as List? ?? const [])
+          .map((item) => ComplaintComment.fromJson(Map<String, dynamic>.from(item as Map)))
+          .toList(),
+    );
+  }
+}
+
+class ComplaintComment {
+  const ComplaintComment({
+    required this.author,
+    required this.role,
+    required this.comment,
+    required this.createdAt,
+  });
+
+  final String author, role, comment;
+  final DateTime createdAt;
+
+  factory ComplaintComment.fromJson(Map<String, dynamic> json) {
+    final author = Map<String, dynamic>.from(json['author'] as Map? ?? const {});
+    return ComplaintComment(
+      author: author['name']?.toString() ?? 'Staff member',
+      role: author['role']?.toString() ?? '',
+      comment: json['comment']?.toString() ?? '',
+      createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '') ?? DateTime.now(),
     );
   }
 }
@@ -198,6 +226,10 @@ class Store extends ChangeNotifier {
       'Not assigned';
   bool get studentApproved =>
       role != Role.student || authenticatedUser?['account_status'] == 'approved';
+  int get approvedStudentsCount =>
+      int.tryParse(authenticatedUser?['approved_students_count']?.toString() ?? '') ?? 0;
+  int get totalStudentsCount =>
+      int.tryParse(authenticatedUser?['total_students_count']?.toString() ?? '') ?? 0;
 
   final complaints = <Complaint>[
     Complaint(
@@ -442,6 +474,9 @@ class Store extends ChangeNotifier {
   Future<void> reviewStudent(int studentId, String action) async {
     await api.reviewStudent(studentId, action);
     pendingStudents.removeWhere((student) => student['id'] == studentId);
+    if (action == 'approve' && authenticatedUser != null) {
+      authenticatedUser!['approved_students_count'] = approvedStudentsCount + 1;
+    }
     notifyListeners();
   }
 
@@ -451,6 +486,12 @@ class Store extends ChangeNotifier {
       (item) => item['id'] == adviserId,
     );
     adviser['account_status'] = action == 'approve' ? 'approved' : 'rejected';
+    notifyListeners();
+  }
+
+  Future<void> addAdviser(Map<String, dynamic> data) async {
+    final adviser = await api.addAdviser(data);
+    adviserApprovals.insert(0, adviser);
     notifyListeners();
   }
 
@@ -503,6 +544,27 @@ class Store extends ChangeNotifier {
     if (index >= 0) complaints[index] = Complaint.fromJson(updated);
     await _refreshNotifications();
     notifyListeners();
+  }
+
+  Future<void> addComplaintComment(Complaint complaint, String text) async {
+    if (complaint.backendId == null) return;
+    final created = await api.addComplaintComment(complaint.backendId!, text);
+    complaint.comments.add(ComplaintComment.fromJson(created));
+    notifyListeners();
+  }
+
+  Future<void> publishResolutionNotice(
+    Complaint complaint, {
+    required String title,
+    required String body,
+  }) async {
+    if (complaint.backendId == null) return;
+    await api.publishResolutionNotice(
+      complaint.backendId!,
+      title: title,
+      body: body,
+    );
+    await refreshData();
   }
 
   Future<void> _refreshNotifications() async {

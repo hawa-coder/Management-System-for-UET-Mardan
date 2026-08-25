@@ -43,4 +43,9 @@ class Complaint extends Model
     {
         return $this->hasMany(ComplaintHistory::class)->oldest();
     }
+
+    public function comments()
+    {
+        return $this->hasMany(ComplaintComment::class)->oldest();
+    }
 }

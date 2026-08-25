@@ -1154,16 +1154,12 @@ class Dashboard extends StatelessWidget {
             Stat(
               store.role == Role.student
                   ? 'Adviser'
-                  : store.role == Role.coordinator
-                  ? 'Adviser requests'
-                  : 'Students',
+                  : 'Approved students',
               store.role == Role.student
                   ? store.studentApproved
                         ? 'Approved'
                         : 'Waiting'
-                  : store.role == Role.coordinator
-                  ? '${store.adviserApprovals.where((a) => a['account_status'] == 'pending').length}'
-                  : '${store.pendingStudents.length}',
+                  : '${store.approvedStudentsCount} / ${store.totalStudentsCount}',
               Icons.groups_outlined,
               Colors.purple,
             ),
@@ -1239,7 +1235,19 @@ class Dashboard extends StatelessWidget {
           const SizedBox(height: 18),
         ],
         if (store.role == Role.coordinator) ...[
-          const SectionTitle('Batch adviser approvals'),
+          Row(
+            children: [
+              const Expanded(child: SectionTitle('Batch adviser approvals')),
+              FilledButton.icon(
+                onPressed: () => showDialog(
+                  context: context,
+                  builder: (_) => AddAdviserDialog(store),
+                ),
+                icon: const Icon(Icons.person_add_outlined),
+                label: const Text('Add adviser'),
+              ),
+            ],
+          ),
           const SizedBox(height: 8),
           if (store.adviserApprovals.isEmpty)
             const Card(
@@ -1649,9 +1657,29 @@ class Detail extends StatelessWidget {
             ],
           ),
         ),
+        if (store.role == Role.adviser ||
+            store.role == Role.coordinator ||
+            store.role == Role.chairman) ...[
+          const SizedBox(height: 22),
+          StaffComments(store, c),
+        ],
+        if (store.role == Role.office &&
+            c.status == Status.resolved &&
+            c.handler == Role.office.label) ...[
+          const SizedBox(height: 20),
+          FilledButton.icon(
+            onPressed: () => showDialog(
+              context: context,
+              builder: (_) => PublishResolutionDialog(store, c),
+            ),
+            icon: const Icon(Icons.campaign_outlined),
+            label: const Text('Publish resolution notice'),
+          ),
+        ],
         if (store.role != Role.student &&
-            c.status != Status.resolved &&
-            c.status != Status.rejected) ...[
+            c.status != Status.rejected &&
+            (c.status != Status.resolved ||
+                (store.role == Role.chairman && c.handler == 'Closed'))) ...[
           const SizedBox(height: 20),
           const SectionTitle('Take action'),
           Wrap(spacing: 8, runSpacing: 8, children: actions(context)),
@@ -1678,6 +1706,12 @@ class Detail extends StatelessWidget {
         child: Text(text),
       ),
     );
+    if (store.role == Role.chairman &&
+        c.status == Status.resolved &&
+        c.handler == 'Closed') {
+      add('Send resolution to Department Staff', 'send_resolved_department');
+      return out;
+    }
     if (c.status != Status.review) {
       add('Accept', 'accept');
     }
@@ -1688,7 +1722,7 @@ class Detail extends StatelessWidget {
       add('Forward to chairman', 'forward_chairman');
     }
     if (store.role == Role.chairman) {
-      add('Send to office', 'send_office');
+      add('Send to Department Staff', 'send_office');
       add('Send to dean', 'send_dean');
     }
     if (store.role == Role.office || store.role == Role.dean) {
@@ -1698,6 +1732,221 @@ class Detail extends StatelessWidget {
     add('Reject', 'reject');
     return out;
   }
+}
+
+class StaffComments extends StatefulWidget {
+  const StaffComments(this.store, this.complaint, {super.key});
+  final Store store;
+  final Complaint complaint;
+  @override
+  State<StaffComments> createState() => _StaffCommentsState();
+}
+
+class _StaffCommentsState extends State<StaffComments> {
+  final controller = TextEditingController();
+  bool sending = false;
+  String? error;
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const SectionTitle('Staff comments & review'),
+      const SizedBox(height: 8),
+      if (widget.complaint.comments.isEmpty)
+        const Card(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Text('No staff comments yet.'),
+          ),
+        )
+      else
+        ...widget.complaint.comments.map(
+          (comment) => Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          comment.author,
+                          style: const TextStyle(
+                            color: navy,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        comment.role.replaceAll('_', ' ').toUpperCase(),
+                        style: const TextStyle(
+                          color: Colors.black45,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 5),
+                  Text(comment.comment),
+                ],
+              ),
+            ),
+          ),
+        ),
+      const SizedBox(height: 8),
+      TextField(
+        controller: controller,
+        minLines: 2,
+        maxLines: 4,
+        maxLength: 2000,
+        decoration: const InputDecoration(
+          labelText: 'Add private staff comment',
+          hintText: 'Write your review or instructions for the next handler...',
+          prefixIcon: Icon(Icons.comment_outlined),
+        ),
+      ),
+      if (error != null)
+        Text(error!, style: const TextStyle(color: Colors.red)),
+      Align(
+        alignment: Alignment.centerRight,
+        child: FilledButton.icon(
+          onPressed: sending
+              ? null
+              : () async {
+                  final text = controller.text.trim();
+                  if (text.isEmpty) return;
+                  setState(() {
+                    sending = true;
+                    error = null;
+                  });
+                  try {
+                    await widget.store.addComplaintComment(
+                      widget.complaint,
+                      text,
+                    );
+                    controller.clear();
+                  } on ApiException catch (exception) {
+                    error = exception.message;
+                  } finally {
+                    if (mounted) setState(() => sending = false);
+                  }
+                },
+          icon: const Icon(Icons.send_outlined),
+          label: Text(sending ? 'Posting...' : 'Post comment'),
+        ),
+      ),
+    ],
+  );
+}
+
+class PublishResolutionDialog extends StatefulWidget {
+  const PublishResolutionDialog(this.store, this.complaint, {super.key});
+  final Store store;
+  final Complaint complaint;
+  @override
+  State<PublishResolutionDialog> createState() =>
+      _PublishResolutionDialogState();
+}
+
+class _PublishResolutionDialogState extends State<PublishResolutionDialog> {
+  late final TextEditingController title;
+  final body = TextEditingController();
+  bool publishing = false;
+  String? error;
+
+  @override
+  void initState() {
+    super.initState();
+    title = TextEditingController(text: 'Resolved: ${widget.complaint.title}');
+  }
+
+  @override
+  void dispose() {
+    title.dispose();
+    body.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Publish resolution notice'),
+    content: SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: title,
+            decoration: const InputDecoration(labelText: 'Notice title'),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: body,
+            minLines: 4,
+            maxLines: 8,
+            decoration: const InputDecoration(
+              labelText: 'Resolution details for students',
+              hintText: 'Explain what was resolved and any action students should take.',
+            ),
+          ),
+          if (error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Text(error!, style: const TextStyle(color: Colors.red)),
+            ),
+        ],
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: publishing ? null : () => Navigator.pop(context),
+        child: const Text('Cancel'),
+      ),
+      FilledButton.icon(
+        onPressed: publishing
+            ? null
+            : () async {
+                if (title.text.trim().isEmpty || body.text.trim().isEmpty) {
+                  setState(() => error = 'Title and resolution details are required.');
+                  return;
+                }
+                setState(() {
+                  publishing = true;
+                  error = null;
+                });
+                try {
+                  await widget.store.publishResolutionNotice(
+                    widget.complaint,
+                    title: title.text.trim(),
+                    body: body.text.trim(),
+                  );
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Resolution published to the student notice board.'),
+                      ),
+                    );
+                  }
+                } on ApiException catch (exception) {
+                  if (mounted) setState(() => error = exception.message);
+                } finally {
+                  if (mounted) setState(() => publishing = false);
+                }
+              },
+        icon: const Icon(Icons.publish_outlined),
+        label: Text(publishing ? 'Publishing...' : 'Publish'),
+      ),
+    ],
+  );
 }
 
 class Info extends StatelessWidget {
@@ -2061,6 +2310,103 @@ class Profile extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    ],
+  );
+}
+
+class AddAdviserDialog extends StatefulWidget {
+  const AddAdviserDialog(this.store, {super.key});
+  final Store store;
+  @override
+  State<AddAdviserDialog> createState() => _AddAdviserDialogState();
+}
+
+class _AddAdviserDialogState extends State<AddAdviserDialog> {
+  final name = TextEditingController();
+  final email = TextEditingController();
+  final batch = TextEditingController();
+  int semester = 1;
+  String section = 'A';
+  bool saving = false;
+  String? error;
+
+  @override
+  void dispose() {
+    name.dispose();
+    email.dispose();
+    batch.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Add batch adviser'),
+    content: SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(controller: name, decoration: const InputDecoration(labelText: 'Full name')),
+          const SizedBox(height: 10),
+          TextField(controller: email, keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(labelText: 'University email')),
+          const SizedBox(height: 10),
+          TextField(controller: batch, decoration: const InputDecoration(labelText: 'Batch', hintText: 'Batch 09')),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<int>(
+                  initialValue: semester,
+                  decoration: const InputDecoration(labelText: 'Semester'),
+                  items: List.generate(8, (index) => DropdownMenuItem(value: index + 1, child: Text('${index + 1}'))),
+                  onChanged: (value) => semester = value!,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  initialValue: section,
+                  decoration: const InputDecoration(labelText: 'Section'),
+                  items: const ['A', 'B', 'C', 'D', 'AI', 'DS', 'CS'].map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
+                  onChanged: (value) => section = value!,
+                ),
+              ),
+            ],
+          ),
+          if (error != null) Padding(padding: const EdgeInsets.only(top: 10), child: Text(error!, style: const TextStyle(color: Colors.red))),
+        ],
+      ),
+    ),
+    actions: [
+      TextButton(onPressed: saving ? null : () => Navigator.pop(context), child: const Text('Cancel')),
+      FilledButton(
+        onPressed: saving ? null : () async {
+          if (name.text.trim().isEmpty || email.text.trim().isEmpty || batch.text.trim().isEmpty) {
+            setState(() => error = 'Name, email, and batch are required.');
+            return;
+          }
+          setState(() { saving = true; error = null; });
+          try {
+            await widget.store.addAdviser({
+              'name': name.text.trim(),
+              'email': email.text.trim().toLowerCase(),
+              'batch': batch.text.trim(),
+              'semester': semester,
+              'section': section,
+            });
+            if (context.mounted) {
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Adviser added as pending. Approve the account when ready.')),
+              );
+            }
+          } on ApiException catch (exception) {
+            if (mounted) setState(() => error = exception.message);
+          } finally {
+            if (mounted) setState(() => saving = false);
+          }
+        },
+        child: Text(saving ? 'Adding...' : 'Add adviser'),
       ),
     ],
   );

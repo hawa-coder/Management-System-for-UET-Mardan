@@ -41,7 +41,7 @@ The API implements Sanctum token authentication, server-controlled roles, compla
 | Batch Adviser | `adviser@uetmardan.edu.pk` | `Adviser@123` |
 | Coordinator | `coordinator@uetmardan.edu.pk` | `Coordinator@123` |
 | Chairman | `chairman@uetmardan.edu.pk` | `Chairman@123` |
-| Office Staff | `office@uetmardan.edu.pk` | `Office@123` |
+| Department Staff | `office@uetmardan.edu.pk` | `Office@123` |
 | Dean | `dean@uetmardan.edu.pk` | `Dean@123` |
 
 These initial passwords must be changed before production deployment. Production must also use HTTPS and a password-protected MySQL account rather than the local XAMPP root account.
