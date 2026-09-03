@@ -1,0 +1,41 @@
+DCMCS WEB INTERFACE LOGIN
+========================
+
+Local website URL:
+http://127.0.0.1:8080
+
+Production website URL:
+https://dcmcs.uetmardan.edu.pk (pending university DNS/HTTPS activation)
+
+Student:
+Email: 2023cs001@uetmardan.edu.pk
+Password: Student@123
+Role: Student
+
+Batch Adviser:
+Email: adviser@uetmardan.edu.pk
+Password: Adviser@123
+Role: Batch Adviser
+
+Coordinator:
+Email: coordinator@uetmardan.edu.pk
+Password: Coordinator@123
+Role: Coordinator
+
+Chairman:
+Email: chairman@uetmardan.edu.pk
+Password: Chairman@123
+Role: Chairman
+
+Department Staff:
+Email: office@uetmardan.edu.pk
+Password: Office@123
+Role: Department Staff
+
+Dean:
+Email: dean@uetmardan.edu.pk
+Password: Dean@123
+Role: Dean
+
+Security note: These are demonstration credentials. Change every password
+before making the system publicly accessible.

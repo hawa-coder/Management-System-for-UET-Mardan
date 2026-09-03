@@ -101,7 +101,11 @@ class Complaint {
       attachmentName: json['attachment_name']?.toString(),
       attachmentUrl: json['attachment_url']?.toString(),
       comments: (json['comments'] as List? ?? const [])
-          .map((item) => ComplaintComment.fromJson(Map<String, dynamic>.from(item as Map)))
+          .map(
+            (item) => ComplaintComment.fromJson(
+              Map<String, dynamic>.from(item as Map),
+            ),
+          )
           .toList(),
     );
   }
@@ -119,12 +123,16 @@ class ComplaintComment {
   final DateTime createdAt;
 
   factory ComplaintComment.fromJson(Map<String, dynamic> json) {
-    final author = Map<String, dynamic>.from(json['author'] as Map? ?? const {});
+    final author = Map<String, dynamic>.from(
+      json['author'] as Map? ?? const {},
+    );
     return ComplaintComment(
       author: author['name']?.toString() ?? 'Staff member',
       role: author['role']?.toString() ?? '',
       comment: json['comment']?.toString() ?? '',
-      createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '') ?? DateTime.now(),
+      createdAt:
+          DateTime.tryParse(json['created_at']?.toString() ?? '') ??
+          DateTime.now(),
     );
   }
 }
@@ -225,11 +233,18 @@ class Store extends ChangeNotifier {
       (authenticatedUser?['batch_adviser'] as Map?)?['name']?.toString() ??
       'Not assigned';
   bool get studentApproved =>
-      role != Role.student || authenticatedUser?['account_status'] == 'approved';
+      role != Role.student ||
+      authenticatedUser?['account_status'] == 'approved';
   int get approvedStudentsCount =>
-      int.tryParse(authenticatedUser?['approved_students_count']?.toString() ?? '') ?? 0;
+      int.tryParse(
+        authenticatedUser?['approved_students_count']?.toString() ?? '',
+      ) ??
+      0;
   int get totalStudentsCount =>
-      int.tryParse(authenticatedUser?['total_students_count']?.toString() ?? '') ?? 0;
+      int.tryParse(
+        authenticatedUser?['total_students_count']?.toString() ?? '',
+      ) ??
+      0;
 
   final complaints = <Complaint>[
     Complaint(
@@ -298,7 +313,7 @@ class Store extends ChangeNotifier {
     ),
     AppNotification(
       title: 'Account signed in',
-      message: 'Your university account was used to access Student Facilitation App.',
+      message: 'Your university account was used to access DCMCS.',
       time: '2 days ago',
       type: NotificationType.account,
       isRead: true,
@@ -425,7 +440,7 @@ class Store extends ChangeNotifier {
       return false;
     } catch (_) {
       authenticationError =
-          'Cannot connect to the Student Facilitation App server. Please try again.';
+          'Cannot connect to the DCMCS server. Please try again.';
       return false;
     } finally {
       authenticating = false;
@@ -463,7 +478,7 @@ class Store extends ChangeNotifier {
       return false;
     } catch (_) {
       authenticationError =
-          'Cannot connect to the Student Facilitation App server. Please try again.';
+          'Cannot connect to the DCMCS server. Please try again.';
       return false;
     } finally {
       authenticating = false;

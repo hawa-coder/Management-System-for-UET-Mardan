@@ -17,6 +17,7 @@ class ApiAuthenticationTest extends TestCase
             'role' => 'adviser',
             'batch' => '2023',
             'section' => 'A',
+            'account_status' => 'approved',
         ]);
 
         $response = $this->postJson('/api/register', [
@@ -26,19 +27,20 @@ class ApiAuthenticationTest extends TestCase
             'semester' => 5,
             'section' => 'A',
             'mobile_number' => '03001234567',
+            'batch_adviser_id' => $adviser->id,
             'password' => 'Student@123',
             'password_confirmation' => 'Student@123',
         ]);
 
         $response->assertCreated()
-            ->assertJsonPath('user.role', 'student')
-            ->assertJsonPath('user.registration_number', '2023-CS-009')
-            ->assertJsonPath('user.batch', '2023')
-            ->assertJsonPath('user.batch_adviser.name', 'Dr. Ahmad')
-            ->assertJsonStructure(['token', 'user']);
+            ->assertJsonPath('message', 'Account submitted. Your batch adviser must approve it before you can sign in.');
         $this->assertDatabaseHas('users', [
             'email' => '2023cs009@uetmardan.edu.pk',
             'role' => 'student',
+            'registration_number' => '2023-CS-009',
+            'batch' => '2023',
+            'batch_adviser_id' => $adviser->id,
+            'account_status' => 'pending',
         ]);
     }
 
@@ -67,8 +69,13 @@ class ApiAuthenticationTest extends TestCase
             ->assertJsonValidationErrors(['email', 'registration_number']);
     }
 
-    public function test_registration_requires_an_adviser_for_the_students_batch_and_section(): void
+    public function test_registration_requires_an_available_approved_adviser(): void
     {
+        $adviser = User::factory()->create([
+            'role' => 'adviser',
+            'account_status' => 'pending',
+        ]);
+
         $this->postJson('/api/register', [
             'name' => 'Hawa Sabir',
             'email' => '2023cs009@uetmardan.edu.pk',
@@ -76,10 +83,11 @@ class ApiAuthenticationTest extends TestCase
             'semester' => 5,
             'section' => 'A',
             'mobile_number' => '03001234567',
+            'batch_adviser_id' => $adviser->id,
             'password' => 'Student@123',
             'password_confirmation' => 'Student@123',
         ])->assertUnprocessable()
-            ->assertJsonValidationErrors('section');
+            ->assertJsonValidationErrors('batch_adviser_id');
     }
 
     public function test_user_can_login_with_the_assigned_role(): void

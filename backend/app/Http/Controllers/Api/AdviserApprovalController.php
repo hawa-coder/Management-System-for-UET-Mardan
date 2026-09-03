@@ -40,7 +40,7 @@ class AdviserApprovalController extends Controller
             ['token' => Hash::make($code), 'created_at' => now()],
         );
         Mail::raw(
-            "Your Student Facilitation App adviser setup code is {$code}. It expires in 15 minutes. After coordinator approval, use Forgot Password to create your password.",
+            "Your DCMCS adviser setup code is {$code}. It expires in 15 minutes. After coordinator approval, use Forgot Password to create your password.",
             fn ($message) => $message->to($email)->subject('Batch adviser account setup'),
         );
 

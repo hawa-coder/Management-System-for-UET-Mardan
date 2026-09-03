@@ -14,7 +14,10 @@ class ComplaintApiTest extends TestCase
 
     public function test_student_can_submit_and_read_own_complaint(): void
     {
-        $student = User::factory()->create(['role' => 'student']);
+        $student = User::factory()->create([
+            'role' => 'student',
+            'account_status' => 'approved',
+        ]);
         Sanctum::actingAs($student);
 
         $response = $this->postJson('/api/complaints', [

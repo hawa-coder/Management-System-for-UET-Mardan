@@ -28,7 +28,7 @@ class _DcmcsAppState extends State<DcmcsApp> {
     animation: store,
     builder: (_, child) => MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Student Facilitation App',
+      title: 'DCMCS',
       theme: ThemeData(
         useMaterial3: true,
         scaffoldBackgroundColor: canvas,
@@ -551,9 +551,8 @@ class _LoginState extends State<Login> {
                                 onChanged: (value) => setState(() {
                                   semester = value;
                                 }),
-                                validator: (value) => value == null
-                                    ? 'Select semester.'
-                                    : null,
+                                validator: (value) =>
+                                    value == null ? 'Select semester.' : null,
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -565,14 +564,15 @@ class _LoginState extends State<Login> {
                                 decoration: const InputDecoration(
                                   labelText: 'Section',
                                 ),
-                                items: const ['A', 'B', 'C', 'D', 'AI', 'DS', 'CS']
-                                    .map(
-                                      (value) => DropdownMenuItem(
-                                        value: value,
-                                        child: Text(value),
-                                      ),
-                                    )
-                                    .toList(),
+                                items:
+                                    const ['A', 'B', 'C', 'D', 'AI', 'DS', 'CS']
+                                        .map(
+                                          (value) => DropdownMenuItem(
+                                            value: value,
+                                            child: Text(value),
+                                          ),
+                                        )
+                                        .toList(),
                                 onChanged: (value) => setState(() {
                                   section = value;
                                 }),
@@ -602,7 +602,8 @@ class _LoginState extends State<Login> {
                           }).toList(),
                           onChanged: loadingAdvisers
                               ? null
-                              : (value) => setState(() => batchAdviserId = value),
+                              : (value) =>
+                                    setState(() => batchAdviserId = value),
                           validator: (value) => value == null
                               ? 'Choose your batch adviser.'
                               : null,
@@ -632,7 +633,9 @@ class _LoginState extends State<Login> {
                         autofillHints: const [AutofillHints.password],
                         autocorrect: false,
                         enableSuggestions: false,
-                        onFieldSubmitted: createAccount ? null : (_) => submit(),
+                        onFieldSubmitted: createAccount
+                            ? null
+                            : (_) => submit(),
                         decoration: InputDecoration(
                           labelText: 'Password',
                           prefixIcon: const Icon(Icons.lock_outline),
@@ -798,6 +801,7 @@ class Shell extends StatelessWidget {
   final Store store;
   @override
   Widget build(BuildContext context) {
+    final isDesktop = MediaQuery.sizeOf(context).width >= 900;
     final pages = [
       Dashboard(store),
       Complaints(store),
@@ -814,7 +818,7 @@ class Shell extends StatelessWidget {
             const SizedBox(width: 9),
             Expanded(
               child: Text(
-                'Student Facilitation App · ${store.role.label}',
+                'DCMCS · ${store.role.label}',
                 style: const TextStyle(
                   fontWeight: FontWeight.w700,
                   fontSize: 17,
@@ -842,7 +846,69 @@ class Shell extends StatelessWidget {
           ),
         ],
       ),
-      body: pages[store.tab],
+      body: Row(
+        children: [
+          if (isDesktop)
+            NavigationRail(
+              backgroundColor: Colors.white,
+              selectedIndex: store.tab,
+              onDestinationSelected: store.go,
+              extended: MediaQuery.sizeOf(context).width >= 1180,
+              minExtendedWidth: 220,
+              labelType: MediaQuery.sizeOf(context).width >= 1180
+                  ? NavigationRailLabelType.none
+                  : NavigationRailLabelType.all,
+              leading: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 18),
+                child: CircleAvatar(
+                  radius: 24,
+                  backgroundColor: const Color(0xFFE8F5EE),
+                  child: Text(
+                    store.displayName.isEmpty
+                        ? 'U'
+                        : store.displayName.substring(0, 1).toUpperCase(),
+                    style: const TextStyle(
+                      color: green,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
+              destinations: const [
+                NavigationRailDestination(
+                  icon: Icon(Icons.dashboard_outlined),
+                  selectedIcon: Icon(Icons.dashboard),
+                  label: Text('Dashboard'),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.assignment_outlined),
+                  selectedIcon: Icon(Icons.assignment),
+                  label: Text('Complaints'),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.campaign_outlined),
+                  selectedIcon: Icon(Icons.campaign),
+                  label: Text('Notices'),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.person_outline),
+                  selectedIcon: Icon(Icons.person),
+                  label: Text('Profile'),
+                ),
+              ],
+            ),
+          if (isDesktop) const VerticalDivider(width: 1),
+          Expanded(
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1200),
+                child: pages[store.tab],
+              ),
+            ),
+          ),
+        ],
+      ),
       floatingActionButton: store.role == Role.student && store.tab == 1
           ? FloatingActionButton.extended(
               backgroundColor: store.studentApproved ? green : Colors.grey,
@@ -863,32 +929,34 @@ class Shell extends StatelessWidget {
               label: const Text('New complaint'),
             )
           : null,
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: store.tab,
-        onDestinationSelected: store.go,
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.dashboard_outlined),
-            selectedIcon: Icon(Icons.dashboard),
-            label: 'Dashboard',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.assignment_outlined),
-            selectedIcon: Icon(Icons.assignment),
-            label: 'Complaints',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.campaign_outlined),
-            selectedIcon: Icon(Icons.campaign),
-            label: 'Notices',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
-            label: 'Profile',
-          ),
-        ],
-      ),
+      bottomNavigationBar: isDesktop
+          ? null
+          : NavigationBar(
+              selectedIndex: store.tab,
+              onDestinationSelected: store.go,
+              destinations: const [
+                NavigationDestination(
+                  icon: Icon(Icons.dashboard_outlined),
+                  selectedIcon: Icon(Icons.dashboard),
+                  label: 'Dashboard',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.assignment_outlined),
+                  selectedIcon: Icon(Icons.assignment),
+                  label: 'Complaints',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.campaign_outlined),
+                  selectedIcon: Icon(Icons.campaign),
+                  label: 'Notices',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.person_outline),
+                  selectedIcon: Icon(Icons.person),
+                  label: 'Profile',
+                ),
+              ],
+            ),
     );
   }
 }
@@ -1152,9 +1220,7 @@ class Dashboard extends StatelessWidget {
             Stat('Resolved', '$resolved', Icons.task_alt, Colors.green),
             const Stat('Notices', '2', Icons.campaign, Colors.orange),
             Stat(
-              store.role == Role.student
-                  ? 'Adviser'
-                  : 'Approved students',
+              store.role == Role.student ? 'Adviser' : 'Approved students',
               store.role == Role.student
                   ? store.studentApproved
                         ? 'Approved'
@@ -1893,7 +1959,8 @@ class _PublishResolutionDialogState extends State<PublishResolutionDialog> {
             maxLines: 8,
             decoration: const InputDecoration(
               labelText: 'Resolution details for students',
-              hintText: 'Explain what was resolved and any action students should take.',
+              hintText:
+                  'Explain what was resolved and any action students should take.',
             ),
           ),
           if (error != null)
@@ -1914,7 +1981,9 @@ class _PublishResolutionDialogState extends State<PublishResolutionDialog> {
             ? null
             : () async {
                 if (title.text.trim().isEmpty || body.text.trim().isEmpty) {
-                  setState(() => error = 'Title and resolution details are required.');
+                  setState(
+                    () => error = 'Title and resolution details are required.',
+                  );
                   return;
                 }
                 setState(() {
@@ -1932,7 +2001,9 @@ class _PublishResolutionDialogState extends State<PublishResolutionDialog> {
                     Navigator.pop(context);
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('Resolution published to the student notice board.'),
+                        content: Text(
+                          'Resolution published to the student notice board.',
+                        ),
                       ),
                     );
                   }
@@ -2346,11 +2417,24 @@ class _AddAdviserDialogState extends State<AddAdviserDialog> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          TextField(controller: name, decoration: const InputDecoration(labelText: 'Full name')),
+          TextField(
+            controller: name,
+            decoration: const InputDecoration(labelText: 'Full name'),
+          ),
           const SizedBox(height: 10),
-          TextField(controller: email, keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(labelText: 'University email')),
+          TextField(
+            controller: email,
+            keyboardType: TextInputType.emailAddress,
+            decoration: const InputDecoration(labelText: 'University email'),
+          ),
           const SizedBox(height: 10),
-          TextField(controller: batch, decoration: const InputDecoration(labelText: 'Batch', hintText: 'Batch 09')),
+          TextField(
+            controller: batch,
+            decoration: const InputDecoration(
+              labelText: 'Batch',
+              hintText: 'Batch 09',
+            ),
+          ),
           const SizedBox(height: 10),
           Row(
             children: [
@@ -2358,7 +2442,13 @@ class _AddAdviserDialogState extends State<AddAdviserDialog> {
                 child: DropdownButtonFormField<int>(
                   initialValue: semester,
                   decoration: const InputDecoration(labelText: 'Semester'),
-                  items: List.generate(8, (index) => DropdownMenuItem(value: index + 1, child: Text('${index + 1}'))),
+                  items: List.generate(
+                    8,
+                    (index) => DropdownMenuItem(
+                      value: index + 1,
+                      child: Text('${index + 1}'),
+                    ),
+                  ),
                   onChanged: (value) => semester = value!,
                 ),
               ),
@@ -2367,45 +2457,70 @@ class _AddAdviserDialogState extends State<AddAdviserDialog> {
                 child: DropdownButtonFormField<String>(
                   initialValue: section,
                   decoration: const InputDecoration(labelText: 'Section'),
-                  items: const ['A', 'B', 'C', 'D', 'AI', 'DS', 'CS'].map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
+                  items: const ['A', 'B', 'C', 'D', 'AI', 'DS', 'CS']
+                      .map(
+                        (value) =>
+                            DropdownMenuItem(value: value, child: Text(value)),
+                      )
+                      .toList(),
                   onChanged: (value) => section = value!,
                 ),
               ),
             ],
           ),
-          if (error != null) Padding(padding: const EdgeInsets.only(top: 10), child: Text(error!, style: const TextStyle(color: Colors.red))),
+          if (error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Text(error!, style: const TextStyle(color: Colors.red)),
+            ),
         ],
       ),
     ),
     actions: [
-      TextButton(onPressed: saving ? null : () => Navigator.pop(context), child: const Text('Cancel')),
+      TextButton(
+        onPressed: saving ? null : () => Navigator.pop(context),
+        child: const Text('Cancel'),
+      ),
       FilledButton(
-        onPressed: saving ? null : () async {
-          if (name.text.trim().isEmpty || email.text.trim().isEmpty || batch.text.trim().isEmpty) {
-            setState(() => error = 'Name, email, and batch are required.');
-            return;
-          }
-          setState(() { saving = true; error = null; });
-          try {
-            await widget.store.addAdviser({
-              'name': name.text.trim(),
-              'email': email.text.trim().toLowerCase(),
-              'batch': batch.text.trim(),
-              'semester': semester,
-              'section': section,
-            });
-            if (context.mounted) {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Adviser added as pending. Approve the account when ready.')),
-              );
-            }
-          } on ApiException catch (exception) {
-            if (mounted) setState(() => error = exception.message);
-          } finally {
-            if (mounted) setState(() => saving = false);
-          }
-        },
+        onPressed: saving
+            ? null
+            : () async {
+                if (name.text.trim().isEmpty ||
+                    email.text.trim().isEmpty ||
+                    batch.text.trim().isEmpty) {
+                  setState(
+                    () => error = 'Name, email, and batch are required.',
+                  );
+                  return;
+                }
+                setState(() {
+                  saving = true;
+                  error = null;
+                });
+                try {
+                  await widget.store.addAdviser({
+                    'name': name.text.trim(),
+                    'email': email.text.trim().toLowerCase(),
+                    'batch': batch.text.trim(),
+                    'semester': semester,
+                    'section': section,
+                  });
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Adviser added as pending. Approve the account when ready.',
+                        ),
+                      ),
+                    );
+                  }
+                } on ApiException catch (exception) {
+                  if (mounted) setState(() => error = exception.message);
+                } finally {
+                  if (mounted) setState(() => saving = false);
+                }
+              },
         child: Text(saving ? 'Adding...' : 'Add adviser'),
       ),
     ],
@@ -2440,35 +2555,64 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
     content: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        TextField(controller: current, obscureText: true, decoration: const InputDecoration(labelText: 'Current password')),
+        TextField(
+          controller: current,
+          obscureText: true,
+          decoration: const InputDecoration(labelText: 'Current password'),
+        ),
         const SizedBox(height: 10),
-        TextField(controller: password, obscureText: true, decoration: const InputDecoration(labelText: 'New password')),
+        TextField(
+          controller: password,
+          obscureText: true,
+          decoration: const InputDecoration(labelText: 'New password'),
+        ),
         const SizedBox(height: 10),
-        TextField(controller: confirm, obscureText: true, decoration: const InputDecoration(labelText: 'Confirm new password')),
-        if (error != null) Padding(padding: const EdgeInsets.only(top: 10), child: Text(error!, style: const TextStyle(color: Colors.red))),
+        TextField(
+          controller: confirm,
+          obscureText: true,
+          decoration: const InputDecoration(labelText: 'Confirm new password'),
+        ),
+        if (error != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Text(error!, style: const TextStyle(color: Colors.red)),
+          ),
       ],
     ),
     actions: [
-      TextButton(onPressed: saving ? null : () => Navigator.pop(context), child: const Text('Cancel')),
+      TextButton(
+        onPressed: saving ? null : () => Navigator.pop(context),
+        child: const Text('Cancel'),
+      ),
       FilledButton(
-        onPressed: saving ? null : () async {
-          if (password.text != confirm.text) {
-            setState(() => error = 'New passwords do not match.');
-            return;
-          }
-          setState(() { saving = true; error = null; });
-          try {
-            final message = await widget.api.changePassword(currentPassword: current.text, password: password.text);
-            if (context.mounted) {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
-            }
-          } on ApiException catch (exception) {
-            if (mounted) setState(() => error = exception.message);
-          } finally {
-            if (mounted) setState(() => saving = false);
-          }
-        },
+        onPressed: saving
+            ? null
+            : () async {
+                if (password.text != confirm.text) {
+                  setState(() => error = 'New passwords do not match.');
+                  return;
+                }
+                setState(() {
+                  saving = true;
+                  error = null;
+                });
+                try {
+                  final message = await widget.api.changePassword(
+                    currentPassword: current.text,
+                    password: password.text,
+                  );
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(
+                      context,
+                    ).showSnackBar(SnackBar(content: Text(message)));
+                  }
+                } on ApiException catch (exception) {
+                  if (mounted) setState(() => error = exception.message);
+                } finally {
+                  if (mounted) setState(() => saving = false);
+                }
+              },
         child: Text(saving ? 'Saving...' : 'Change password'),
       ),
     ],
@@ -2493,7 +2637,10 @@ class _ForgotPasswordDialogState extends State<ForgotPasswordDialog> {
 
   @override
   void dispose() {
-    email.dispose(); code.dispose(); password.dispose(); confirm.dispose();
+    email.dispose();
+    code.dispose();
+    password.dispose();
+    confirm.dispose();
     super.dispose();
   }
 
@@ -2504,44 +2651,97 @@ class _ForgotPasswordDialogState extends State<ForgotPasswordDialog> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          TextField(controller: email, enabled: !codeSent, decoration: const InputDecoration(labelText: 'University email')),
+          TextField(
+            controller: email,
+            enabled: !codeSent,
+            decoration: const InputDecoration(labelText: 'University email'),
+          ),
           if (codeSent) ...[
             const SizedBox(height: 10),
-            TextField(controller: code, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Six-digit code')),
+            TextField(
+              controller: code,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'Six-digit code'),
+            ),
             const SizedBox(height: 10),
-            TextField(controller: password, obscureText: true, decoration: const InputDecoration(labelText: 'New password')),
+            TextField(
+              controller: password,
+              obscureText: true,
+              decoration: const InputDecoration(labelText: 'New password'),
+            ),
             const SizedBox(height: 10),
-            TextField(controller: confirm, obscureText: true, decoration: const InputDecoration(labelText: 'Confirm new password')),
+            TextField(
+              controller: confirm,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'Confirm new password',
+              ),
+            ),
           ],
-          if (info != null) Padding(padding: const EdgeInsets.only(top: 10), child: Text(info!, style: const TextStyle(color: green))),
-          if (error != null) Padding(padding: const EdgeInsets.only(top: 10), child: Text(error!, style: const TextStyle(color: Colors.red))),
+          if (info != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Text(info!, style: const TextStyle(color: green)),
+            ),
+          if (error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Text(error!, style: const TextStyle(color: Colors.red)),
+            ),
         ],
       ),
     ),
     actions: [
-      TextButton(onPressed: saving ? null : () => Navigator.pop(context), child: const Text('Cancel')),
+      TextButton(
+        onPressed: saving ? null : () => Navigator.pop(context),
+        child: const Text('Cancel'),
+      ),
       FilledButton(
-        onPressed: saving ? null : () async {
-          setState(() { saving = true; error = null; });
-          try {
-            if (!codeSent) {
-              final message = await widget.api.forgotPassword(email.text);
-              if (mounted) setState(() { codeSent = true; info = message; });
-            } else {
-              if (password.text != confirm.text) throw const ApiException('New passwords do not match.');
-              final message = await widget.api.resetPassword(email: email.text, code: code.text, password: password.text);
-              if (context.mounted) {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
-              }
-            }
-          } on ApiException catch (exception) {
-            if (mounted) setState(() => error = exception.message);
-          } finally {
-            if (mounted) setState(() => saving = false);
-          }
-        },
-        child: Text(saving ? 'Please wait...' : codeSent ? 'Reset password' : 'Send code'),
+        onPressed: saving
+            ? null
+            : () async {
+                setState(() {
+                  saving = true;
+                  error = null;
+                });
+                try {
+                  if (!codeSent) {
+                    final message = await widget.api.forgotPassword(email.text);
+                    if (mounted) {
+                      setState(() {
+                        codeSent = true;
+                        info = message;
+                      });
+                    }
+                  } else {
+                    if (password.text != confirm.text) {
+                      throw const ApiException('New passwords do not match.');
+                    }
+                    final message = await widget.api.resetPassword(
+                      email: email.text,
+                      code: code.text,
+                      password: password.text,
+                    );
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(SnackBar(content: Text(message)));
+                    }
+                  }
+                } on ApiException catch (exception) {
+                  if (mounted) setState(() => error = exception.message);
+                } finally {
+                  if (mounted) setState(() => saving = false);
+                }
+              },
+        child: Text(
+          saving
+              ? 'Please wait...'
+              : codeSent
+              ? 'Reset password'
+              : 'Send code',
+        ),
       ),
     ],
   );

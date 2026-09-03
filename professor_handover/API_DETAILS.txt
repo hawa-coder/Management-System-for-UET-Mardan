@@ -1,0 +1,44 @@
+DCMCS API DETAILS
+=================
+
+Current local testing base URL:
+http://127.0.0.1:8000/api
+
+Proposed production base URL:
+https://dcmcs.uetmardan.edu.pk/api
+
+Public endpoints:
+GET  /advisers
+POST /register
+POST /login
+POST /forgot-password
+POST /reset-password
+
+Authenticated endpoints (Bearer token required):
+POST /logout
+GET  /profile
+POST /change-password
+GET  /complaints
+POST /complaints
+GET  /complaints/{id}
+GET  /complaints/{id}/attachment
+POST /complaints/{id}/comments
+POST /complaints/{id}/transition
+POST /complaints/{id}/publish-resolution
+GET  /notices
+POST /notices
+GET  /notifications
+POST /notifications/read-all
+POST /notifications/{id}/read
+GET  /student-approvals
+POST /student-approvals/{id}
+GET  /adviser-approvals
+POST /adviser-approvals
+POST /adviser-approvals/{id}
+
+Example login URL:
+http://127.0.0.1:8000/api/login
+
+Production build commands:
+flutter build apk --release --dart-define=API_BASE_URL=https://dcmcs.uetmardan.edu.pk/api
+flutter build web --release --dart-define=API_BASE_URL=https://dcmcs.uetmardan.edu.pk/api

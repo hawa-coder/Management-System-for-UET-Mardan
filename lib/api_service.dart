@@ -1,6 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
@@ -99,7 +97,6 @@ class ApiService {
     if (response.statusCode != 201) {
       throw ApiException(_errorMessage(body), response.statusCode);
     }
-
   }
 
   Future<List<Map<String, dynamic>>> fetchAdvisers() async {
@@ -137,7 +134,9 @@ class ApiService {
   }
 
   Future<String> forgotPassword(String email) async {
-    final body = await post('/forgot-password', {'email': email.trim().toLowerCase()});
+    final body = await post('/forgot-password', {
+      'email': email.trim().toLowerCase(),
+    });
     return body['message']?.toString() ?? 'Reset code sent.';
   }
 
