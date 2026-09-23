@@ -8,10 +8,7 @@ class Notice extends Model
 {
     protected $fillable = ['complaint_id', 'published_by', 'title', 'body', 'audience', 'published_at'];
 
-    protected function casts(): array
-    {
-        return ['published_at' => 'datetime'];
-    }
+    protected $casts = ['published_at' => 'datetime'];
 
     public function publisher()
     {

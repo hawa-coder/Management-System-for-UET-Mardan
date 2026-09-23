@@ -11,7 +11,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // The personal_access_tokens migration is already part of this project.
+        \Laravel\Sanctum\Sanctum::ignoreMigrations();
     }
 
     /**

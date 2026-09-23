@@ -4,8 +4,11 @@ DCMCS API DETAILS
 Current local testing base URL:
 http://127.0.0.1:8000/api
 
-Proposed production base URL:
-https://dcmcs.uetmardan.edu.pk/api
+Current production base URL:
+https://uetmardan.edu.pk/dept_comp/public/api
+
+Website URL (after installing website-update-for-sir.zip):
+https://uetmardan.edu.pk/dept_comp/public/
 
 Public endpoints:
 GET  /advisers
@@ -40,5 +43,8 @@ Example login URL:
 http://127.0.0.1:8000/api/login
 
 Production build commands:
-flutter build apk --release --dart-define=API_BASE_URL=https://dcmcs.uetmardan.edu.pk/api
-flutter build web --release --dart-define=API_BASE_URL=https://dcmcs.uetmardan.edu.pk/api
+flutter build apk --release --dart-define=API_BASE_URL=https://uetmardan.edu.pk/dept_comp/public/api
+flutter build web --release --base-href=/dept_comp/public/site/ --dart-define=API_BASE_URL=https://uetmardan.edu.pk/dept_comp/public/api
+
+Use DCMCS-university-server.apk for this API. The older PENDING-DNS APK still
+uses the earlier domain.

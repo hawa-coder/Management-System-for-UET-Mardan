@@ -43,3 +43,13 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Local backups and duplicate handover outputs
+/backups/
+/sir/
+/sir.zip
+/tommorow work/
+/tommorow work.zip
+/DCMCS-university-server.apk
+/DCMCS-professor-handover.zip
+/website-update-for-sir.zip

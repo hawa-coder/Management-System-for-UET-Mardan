@@ -1,0 +1,20 @@
+ANDROID APP FOR THE CURRENT UNIVERSITY SERVER
+=============================================
+
+Use DCMCS-university-server.apk.
+API: https://uetmardan.edu.pk/dept_comp/public/api
+
+Copy this APK to the Android phone and open it to install/update the app.
+If Android asks, allow installation from the app used to open this file.
+Launch Student Facilitation App, log out of an older saved session if needed,
+and sign in using LOGIN_DETAILS.txt. The phone needs internet access.
+
+The APK connects directly to the backend. Uploading the Flutter website is
+not required for the installed Android app to connect to the API.
+Do not use the old app-release-PRODUCTION-PENDING-DNS.apk; it targets the old
+domain. This is a demonstration build signed with the existing project debug
+key, not a Play Store publishing build.
+
+Before the presentation, test login, viewing complaints, and submitting a test
+complaint on the actual phone. Local build verification does not prove every
+operation works on the university server or on every device.

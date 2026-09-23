@@ -5,7 +5,7 @@ Local website URL:
 http://127.0.0.1:8080
 
 Production website URL:
-https://dcmcs.uetmardan.edu.pk (pending university DNS/HTTPS activation)
+https://uetmardan.edu.pk/dept_comp/public/ (after installing the website update)
 
 Student:
 Email: 2023cs001@uetmardan.edu.pk
@@ -13,7 +13,7 @@ Password: Student@123
 Role: Student
 
 Batch Adviser:
-Email: adviser@uetmardan.edu.pk
+Email: shams.ur.rahman@uetmardan.edu.pk
 Password: Adviser@123
 Role: Batch Adviser
 

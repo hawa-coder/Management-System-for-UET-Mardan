@@ -58,7 +58,7 @@ class AdviserApprovalController extends Controller
             'data' => User::query()
                 ->where('role', 'adviser')
                 ->where('is_active', true)
-                ->orderByRaw("FIELD(account_status, 'pending', 'approved', 'rejected')")
+                ->orderByRaw("CASE account_status WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 WHEN 'rejected' THEN 2 ELSE 3 END")
                 ->orderBy('name')
                 ->get(['id', 'name', 'email', 'batch', 'semester', 'section', 'account_status']),
         ]);

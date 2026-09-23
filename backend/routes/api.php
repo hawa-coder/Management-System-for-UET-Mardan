@@ -16,7 +16,7 @@ Route::post('/reset-password', [AuthController::class, 'resetPassword'])->middle
 Route::get('/complaints/{complaint}/attachment', [ComplaintController::class, 'attachment'])
     ->name('complaints.attachment');
 
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureAccountCanAccessApi::class])->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::post('/change-password', [AuthController::class, 'changePassword']);
     Route::get('/profile', [AuthController::class, 'profile']);

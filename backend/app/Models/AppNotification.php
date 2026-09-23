@@ -8,8 +8,5 @@ class AppNotification extends Model
 {
     protected $fillable = ['user_id', 'type', 'title', 'message', 'read_at'];
 
-    protected function casts(): array
-    {
-        return ['read_at' => 'datetime'];
-    }
+    protected $casts = ['read_at' => 'datetime'];
 }

@@ -1,0 +1,40 @@
+﻿WEBSITE UPDATE - UPLOAD ONLY, NO TERMINAL REQUIRED
+=================================================
+
+Website: https://uetmardan.edu.pk/dept_comp/public/
+API: https://uetmardan.edu.pk/dept_comp/public/api
+
+This ZIP updates the backend already running on the university server.
+No Composer installation or Artisan commands are needed for this update.
+
+1. Download a backup of the current dept_comp/public/index.php to your computer.
+2. Extract website-update-for-sir.zip on your computer.
+3. Upload the CONTENTS of its public folder into the existing server folder
+   dept_comp/public. Merge folders and replace index.php.
+
+   Final server paths:
+   dept_comp/public/index.php             (replace with supplied file)
+   dept_comp/public/site/index.html       (new site folder, all files included)
+   dept_comp/public/site/flutter_bootstrap.js
+   dept_comp/public/site/main.dart.js
+   dept_comp/public/site/assets/...
+
+   Do not create public/public or replace the entire dept_comp folder.
+   Keep .htaccess, .env, vendor, routes, storage and the existing database.
+   Do not import the database again or generate a new APP_KEY.
+
+4. Open https://uetmardan.edu.pk/dept_comp/public/ and press Ctrl+F5.
+5. Check /dept_comp/public/api/advisers still returns data, then test login.
+
+The replacement index.php serves the website before Laravel route handling,
+so an existing cached welcome-page route does not require clearing.
+If the server keeps old PHP code in OPcache, use its hosting-panel PHP restart
+option or ask the hosting administrator to reload PHP.
+
+If unchanged, verify upload paths. If blank, verify that
+/dept_comp/public/site/flutter_bootstrap.js and main.dart.js can be loaded.
+To undo this update, restore the backed-up public/index.php.
+
+This ZIP updates the WEBSITE only. The earlier Android APK still targets the
+old domain and requires a separate rebuild. This website build is specific to
+/dept_comp/public/; rebuild if that path changes.
