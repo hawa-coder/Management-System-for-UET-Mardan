@@ -13,7 +13,7 @@ class Complaint extends Model
     protected $fillable = [
         'complaint_number', 'user_id', 'title', 'details', 'category',
         'priority', 'status', 'current_handler_role', 'attachment_path',
-        'attachment_name', 'attachment_mime',
+        'attachment_name', 'attachment_mime', 'current_handler_id', 'current_handler_name',
     ];
 
     protected $hidden = ['attachment_path'];
@@ -41,7 +41,7 @@ class Complaint extends Model
 
     public function history()
     {
-        return $this->hasMany(ComplaintHistory::class)->oldest();
+        return $this->hasMany(ComplaintHistory::class)->orderBy('id');
     }
 
     public function comments()

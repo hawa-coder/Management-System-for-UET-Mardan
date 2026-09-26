@@ -26,6 +26,14 @@ class AuthController extends Controller
 
     public function register(Request $request)
     {
+        // Check uniqueness using the same values that will be stored.
+        if (is_string($request->input('email'))) {
+            $request->merge(['email' => strtolower(trim($request->input('email')))]);
+        }
+        if (is_string($request->input('registration_number'))) {
+            $request->merge(['registration_number' => strtoupper(trim($request->input('registration_number')))]);
+        }
+
         $data = $request->validate([
             'name' => ['required', 'string', 'max:100'],
             'email' => ['required', 'email:rfc', 'ends_with:@uetmardan.edu.pk', 'unique:users,email'],
@@ -37,10 +45,10 @@ class AuthController extends Controller
             'password' => ['required', 'confirmed', 'min:8', 'regex:/[a-z]/', 'regex:/[A-Z]/', 'regex:/[0-9]/', 'regex:/[^A-Za-z0-9]/'],
         ]);
 
-        preg_match('/^(\d{4})/', $data['registration_number'], $batchMatch);
+        preg_match('/^(\d{2,4})(?!\d)/', $data['registration_number'], $batchMatch);
         if (! isset($batchMatch[1])) {
             throw ValidationException::withMessages([
-                'registration_number' => ['Registration number must begin with the four-digit batch year.'],
+                'registration_number' => ['Registration number must begin with two, three, or four digits.'],
             ]);
         }
 
@@ -77,7 +85,7 @@ class AuthController extends Controller
         $credentials = $request->validate([
             'email' => ['required', 'email:rfc', 'ends_with:@uetmardan.edu.pk'],
             'password' => ['required', 'string'],
-            'role' => ['required', 'in:student,adviser,coordinator,chairman,office,dean'],
+            'role' => ['required', 'in:student,adviser,coordinator,chairman,office,dean,faculty'],
         ]);
 
         $user = User::where('email', strtolower($credentials['email']))->first();

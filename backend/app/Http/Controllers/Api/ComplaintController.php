@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\ComplaintResource;
 use App\Models\AppNotification;
 use App\Models\Complaint;
-use App\Models\ComplaintHistory;
 use App\Models\Notice;
+use App\Models\User;
+use App\Services\ComplaintRouting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -15,27 +17,14 @@ class ComplaintController extends Controller
 {
     public function index(Request $request)
     {
-        $user = $request->user();
-        $query = Complaint::with(['student:id,name,email,registration_number,batch,section,batch_adviser_id', 'history.actor:id,name,role'])->latest();
-
-        if (in_array($user->role, ['adviser', 'coordinator', 'chairman'], true)) {
-            $query->with('comments.author:id,name,role');
-        }
-
-        if ($user->role === 'student') {
-            $query->where('user_id', $user->id);
-        } elseif ($user->role === 'adviser') {
-            $query->where('current_handler_role', 'adviser')
-                ->whereHas('student', fn ($student) => $student->where('batch_adviser_id', $user->id));
-        } elseif (! in_array($user->role, ['chairman', 'office', 'dean'], true)) {
-            $query->where('current_handler_role', $user->role);
-        }
+        $query = ComplaintRouting::visibleTo($request->user())
+            ->with(['student', 'history', 'comments.author:id,name,role'])->latest();
 
         if ($request->filled('status')) {
             $query->where('status', $request->string('status'));
         }
 
-        return response()->json($query->paginate(20));
+        return ComplaintResource::collection($query->paginate(20));
     }
 
     public function store(Request $request)
@@ -63,16 +52,17 @@ class ComplaintController extends Controller
         }
 
         $complaint = DB::transaction(function () use ($request, $data) {
+            $adviser = User::whereKey($request->user()->batch_adviser_id)->where('role', 'adviser')
+                ->where('is_active', true)->where('account_status', 'approved')->first();
             $complaint = Complaint::create($data + [
                 'complaint_number' => 'CMP-'.now()->format('ymd').'-'.str_pad((string) (Complaint::max('id') + 1), 4, '0', STR_PAD_LEFT),
                 'user_id' => $request->user()->id,
+                'status' => 'submitted',
+                'current_handler_role' => 'adviser',
+                'current_handler_id' => $adviser?->id,
+                'current_handler_name' => $adviser?->name,
             ]);
-            ComplaintHistory::create([
-                'complaint_id' => $complaint->id,
-                'acted_by' => $request->user()->id,
-                'action' => 'Complaint submitted',
-                'to_status' => 'submitted',
-            ]);
+            ComplaintRouting::record($complaint, $request->user(), 'submitted', 'Complaint submitted', recipient: $adviser);
             AppNotification::create([
                 'user_id' => $request->user()->id,
                 'type' => 'complaint',
@@ -83,14 +73,24 @@ class ComplaintController extends Controller
             return $complaint;
         });
 
-        return response()->json($complaint->load('history'), 201);
+        return response()->json((new ComplaintResource($complaint))->resolve($request), 201);
     }
 
     public function show(Request $request, Complaint $complaint)
     {
         $this->authorizeAccess($request, $complaint);
 
-        return response()->json($complaint->load(['student', 'history.actor']));
+        return response()->json((new ComplaintResource($complaint))->resolve($request));
+    }
+
+    public function recipients(Request $request, Complaint $complaint)
+    {
+        $this->authorizeAccess($request, $complaint);
+        abort_unless(ComplaintRouting::canForward($complaint, $request->user())
+            || ComplaintRouting::canSendResolution($complaint, $request->user()), 403, 'You cannot forward this complaint.');
+        $query = ComplaintRouting::recipients($complaint, $request->user());
+        if (ComplaintRouting::canSendResolution($complaint, $request->user())) $query->where('role', 'office');
+        return response()->json(['data' => $query->orderBy('name')->get(['id', 'name', 'role'])]);
     }
 
     public function attachment(Request $request, Complaint $complaint)
@@ -111,68 +111,78 @@ class ComplaintController extends Controller
         abort_if($request->user()->role === 'student', 403, 'Students cannot change complaint status.');
 
         $data = $request->validate([
-            'action' => ['required', 'in:accept,forward_coordinator,forward_chairman,send_office,send_dean,send_resolved_department,resolve,reject,return_chairman'],
+            'action' => ['required', 'in:accept,forward,return,forward_coordinator,forward_chairman,send_office,send_dean,send_resolved_department,resolve,reject,return_chairman'],
+            'recipient_id' => ['nullable', 'integer', 'exists:users,id'],
             'remarks' => ['nullable', 'string', 'max:2000'],
         ]);
-
-        $allowed = [
-            'adviser' => ['forward_coordinator' => ['forwarded', 'coordinator']],
-            'coordinator' => ['forward_chairman' => ['forwarded', 'chairman']],
-            'chairman' => [
-                'send_office' => ['office', 'office'],
-                'send_dean' => ['dean', 'dean'],
-                'resolve' => ['resolved', 'closed'],
-                'reject' => ['rejected', 'closed'],
-                'send_resolved_department' => ['resolved', 'office'],
-            ],
-            'office' => ['return_chairman' => ['forwarded', 'chairman']],
-            'dean' => ['return_chairman' => ['forwarded', 'chairman']],
-        ];
-
-        $commonActions = [
-            'accept' => ['review', $request->user()->role],
-            'resolve' => ['resolved', 'closed'],
-            'reject' => ['rejected', 'closed'],
-        ];
-        $next = $commonActions[$data['action']]
-            ?? $allowed[$request->user()->role][$data['action']]
-            ?? null;
-        abort_unless($next, 403, 'This action is not permitted for your role.');
-        $previous = $complaint->status;
-
-        DB::transaction(function () use ($request, $complaint, $data, $next, $previous) {
-            $complaint->update(['status' => $next[0], 'current_handler_role' => $next[1]]);
-            ComplaintHistory::create([
-                'complaint_id' => $complaint->id,
-                'acted_by' => $request->user()->id,
-                'action' => str_replace('_', ' ', ucfirst($data['action'])),
-                'from_status' => $previous,
-                'to_status' => $next[0],
-                'remarks' => $data['remarks'] ?? null,
+        DB::transaction(function () use ($request, $complaint, $data) {
+            // Recheck ownership under a lock so two stale screens cannot both forward it.
+            $locked = Complaint::whereKey($complaint->id)->lockForUpdate()->firstOrFail();
+            $user = $request->user();
+            $action = $data['action'];
+            $sendResolution = $action === 'send_resolved_department';
+            abort_unless($sendResolution ? ComplaintRouting::canSendResolution($locked, $user)
+                : ComplaintRouting::canAct($locked, $user), 403, 'Only the current holder can act on this complaint.');
+            $previous = $locked->status;
+            $recipient = null;
+            $type = 'status';
+            if (in_array($action, ['accept', 'resolve', 'reject'], true)) {
+                $status = ['accept' => 'review', 'resolve' => 'resolved', 'reject' => 'rejected'][$action];
+                $role = $action === 'accept' ? $user->role : 'closed';
+                $label = ['accept' => 'Complaint accepted for review', 'resolve' => 'Complaint resolved', 'reject' => 'Complaint rejected'][$action];
+            } else {
+                abort_unless($sendResolution || ComplaintRouting::canForward($locked, $user), 403, 'You do not have permission to forward complaints.');
+                $targetRole = [
+                    'forward_coordinator' => 'coordinator', 'forward_chairman' => 'chairman',
+                    'send_office' => 'office', 'send_dean' => 'dean',
+                    'return_chairman' => 'chairman', 'send_resolved_department' => 'office',
+                ][$action] ?? null;
+                $recipients = ComplaintRouting::recipients($locked, $user);
+                if ($targetRole) $recipients->where('role', $targetRole);
+                if (! empty($data['recipient_id'])) {
+                    $recipient = $recipients->whereKey($data['recipient_id'])->first();
+                } elseif ($targetRole) {
+                    // Older clients may omit the person only when there is exactly one eligible recipient.
+                    $choices = $recipients->limit(2)->get();
+                    if ($choices->count() === 1) $recipient = $choices->first();
+                }
+                abort_unless($recipient, 422, 'Select an active, approved recipient authorized for this complaint.');
+                $type = in_array($action, ['return', 'return_chairman'], true) ? 'returned' : 'forwarded';
+                $status = $sendResolution ? 'resolved' : ($type === 'returned' ? 'returned' : 'forwarded');
+                $role = $recipient->role;
+                $label = $sendResolution ? 'Resolution sent to Department Staff'
+                    : ($type === 'returned' ? 'Complaint returned' : 'Complaint forwarded');
+            }
+            $locked->update([
+                'status' => $status, 'current_handler_role' => $role,
+                'current_handler_id' => $recipient?->id ?? $user->id,
+                'current_handler_name' => $recipient?->name ?? $user->name,
             ]);
+            ComplaintRouting::record($locked, $user, $type, $label, $previous, $recipient, $data['remarks'] ?? null);
             AppNotification::create([
                 'user_id' => $complaint->user_id,
                 'type' => 'complaint',
                 'title' => 'Complaint status updated',
-                'message' => "{$complaint->complaint_number} is now {$next[0]}.",
+                'message' => "{$complaint->complaint_number} is now {$status}.",
             ]);
+            if ($recipient) {
+                AppNotification::create([
+                    'user_id' => $recipient->id, 'type' => 'complaint',
+                    'title' => $label,
+                    'message' => "{$complaint->complaint_number} received from {$user->name}.",
+                ]);
+            }
         });
-
-        $fresh = $complaint->fresh()->load('history.actor');
-        if (in_array($request->user()->role, ['adviser', 'coordinator', 'chairman'], true)) {
-            $fresh->load('comments.author:id,name,role');
-        }
-
-        return response()->json($fresh);
+        return response()->json((new ComplaintResource($complaint->fresh()))->resolve($request));
     }
 
     public function comment(Request $request, Complaint $complaint)
     {
         $this->authorizeAccess($request, $complaint);
         abort_unless(
-            in_array($request->user()->role, ['adviser', 'coordinator', 'chairman'], true),
+            in_array($request->user()->role, ComplaintRouting::STAFF, true),
             403,
-            'Only batch advisers, the coordinator, and the chairman can add complaint comments.'
+            'Only authorized staff can add complaint comments.'
         );
 
         $data = $request->validate([
@@ -190,7 +200,9 @@ class ComplaintController extends Controller
     public function publishResolution(Request $request, Complaint $complaint)
     {
         $user = $request->user();
+        $this->authorizeAccess($request, $complaint);
         abort_unless($user->role === 'office', 403, 'Only Department Staff can publish resolution notices.');
+        abort_unless(ComplaintRouting::isHolder($complaint, $user), 403, 'Only the current holder can publish the resolution.');
         abort_unless(
             $complaint->status === 'resolved' && $complaint->current_handler_role === 'office',
             422,
@@ -211,28 +223,13 @@ class ComplaintController extends Controller
             ],
         );
 
-        ComplaintHistory::create([
-            'complaint_id' => $complaint->id,
-            'acted_by' => $user->id,
-            'action' => 'Resolution published to student notice board',
-            'from_status' => 'resolved',
-            'to_status' => 'resolved',
-        ]);
+        ComplaintRouting::record($complaint, $user, 'status', 'Resolution published to student notice board', 'resolved');
 
         return response()->json($notice, 201);
     }
 
     private function authorizeAccess(Request $request, Complaint $complaint): void
     {
-        $user = $request->user();
-        abort_if($user->role === 'student' && $complaint->user_id !== $user->id, 403);
-        if ($user->role === 'adviser') {
-            $complaint->loadMissing('student:id,batch_adviser_id');
-            abort_if($complaint->current_handler_role !== 'adviser'
-                || $complaint->student?->batch_adviser_id !== $user->id, 403);
-            return;
-        }
-        abort_if(! in_array($user->role, ['student', 'chairman', 'office', 'dean'], true)
-            && $complaint->current_handler_role !== $user->role, 403);
+        abort_unless(ComplaintRouting::visibleTo($request->user())->whereKey($complaint->id)->exists(), 403);
     }
 }

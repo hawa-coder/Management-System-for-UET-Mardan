@@ -10,7 +10,21 @@ class ApiAuthenticationTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_student_can_create_an_account(): void
+    public static function studentRegistrationFormats(): array
+    {
+        return [
+            'four-digit prefix' => ['2023-CS-009', '2023cs009@uetmardan.edu.pk', '2023'],
+            'two-digit prefix' => ['23mdbcs345', '23mdbcs345@uetmardan.edu.pk', '23'],
+            'registration shown in screenshot' => ['23MDBCS425', '0425@uetmardan.edu.pk', '23'],
+            'three-digit prefix without separators' => ['123MDBCS425', '123mdbcs425@uetmardan.edu.pk', '123'],
+            'three-digit prefix' => ['123-MDBCS-345', '123mdbcs345@uetmardan.edu.pk', '123'],
+            'email starting with letters' => ['23-MDBCS-346', 'student.name@uetmardan.edu.pk', '23'],
+            'email with a different prefix' => ['23-MDBCS-347', 'my.name+study@uetmardan.edu.pk', '23'],
+        ];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('studentRegistrationFormats')]
+    public function test_student_can_create_an_account(string $registration, string $email, string $batch): void
     {
         $adviser = User::factory()->create([
             'name' => 'Dr. Ahmad',
@@ -22,8 +36,8 @@ class ApiAuthenticationTest extends TestCase
 
         $response = $this->postJson('/api/register', [
             'name' => 'Hawa Sabir',
-            'email' => '2023cs009@uetmardan.edu.pk',
-            'registration_number' => '2023-CS-009',
+            'email' => $email,
+            'registration_number' => $registration,
             'semester' => 5,
             'section' => 'A',
             'mobile_number' => '03001234567',
@@ -35,10 +49,10 @@ class ApiAuthenticationTest extends TestCase
         $response->assertCreated()
             ->assertJsonPath('message', 'Account submitted. Your batch adviser must approve it before you can sign in.');
         $this->assertDatabaseHas('users', [
-            'email' => '2023cs009@uetmardan.edu.pk',
+            'email' => $email,
             'role' => 'student',
-            'registration_number' => '2023-CS-009',
-            'batch' => '2023',
+            'registration_number' => strtoupper($registration),
+            'batch' => $batch,
             'batch_adviser_id' => $adviser->id,
             'account_status' => 'pending',
         ]);
@@ -67,6 +81,39 @@ class ApiAuthenticationTest extends TestCase
             'password_confirmation' => 'Student@123',
         ])->assertUnprocessable()
             ->assertJsonValidationErrors(['email', 'registration_number']);
+    }
+
+    public static function invalidEmails(): array
+    {
+        return [
+            ['student@gmail.com'],
+            ['student@'],
+            ['student.gmail.com'],
+            ['student@sub.uetmardan.edu.pk'],
+            ['student@uetmardan.edu.pk.example.com'],
+            ['student name@uetmardan.edu.pk'],
+            ['@uetmardan.edu.pk'],
+        ];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('invalidEmails')]
+    public function test_registration_rejects_invalid_email_addresses(string $email): void
+    {
+        $adviser = User::factory()->create(['role' => 'adviser', 'account_status' => 'approved']);
+
+        $this->postJson('/api/register', [
+            'name' => 'Test Student',
+            'email' => $email,
+            'registration_number' => '23-MDBCS-345',
+            'semester' => 5,
+            'section' => 'A',
+            'mobile_number' => '03001234567',
+            'batch_adviser_id' => $adviser->id,
+            'password' => 'Student@123',
+            'password_confirmation' => 'Student@123',
+        ])->assertUnprocessable()->assertJsonValidationErrors('email');
+
+        $this->assertDatabaseMissing('users', ['registration_number' => '23-MDBCS-345']);
     }
 
     public function test_registration_requires_an_available_approved_adviser(): void

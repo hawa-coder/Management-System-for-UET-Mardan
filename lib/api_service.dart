@@ -167,18 +167,23 @@ class ApiService {
   }
 
   Future<void> logout() async {
-    final token = _token ?? await _storage.read(key: 'auth_token');
-    if (token != null) {
-      await _client.post(
-        Uri.parse('$baseUrl/logout'),
-        headers: {
-          'Accept': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      );
+    try {
+      final token = _token ?? await _storage.read(key: 'auth_token');
+      if (token != null) {
+        await _client
+            .post(
+              Uri.parse('$baseUrl/logout'),
+              headers: {
+                'Accept': 'application/json',
+                'Authorization': 'Bearer $token',
+              },
+            )
+            .timeout(const Duration(seconds: 15));
+      }
+    } finally {
+      _token = null;
+      await _storage.delete(key: 'auth_token');
     }
-    await _storage.delete(key: 'auth_token');
-    _token = null;
   }
 
   Future<Map<String, dynamic>?> restoreProfile() async {
@@ -198,12 +203,10 @@ class ApiService {
 
   Future<Map<String, dynamic>> fetchProfile() => get('/profile');
 
-  Future<List<Map<String, dynamic>>> fetchComplaints() async {
-    final body = await get('/complaints');
-    return (body['data'] as List? ?? const [])
-        .map((item) => Map<String, dynamic>.from(item as Map))
-        .toList();
-  }
+  Future<List<Map<String, dynamic>>> fetchComplaints() =>
+      _allPages('/complaints');
+
+  Future<Map<String, dynamic>> fetchComplaint(int id) => get('/complaints/$id');
 
   Future<Map<String, dynamic>> createComplaint(
     Map<String, dynamic> data, {
@@ -237,8 +240,23 @@ class ApiService {
     return '${uri.scheme}://${uri.authority}${path.startsWith('/') ? path : '/$path'}';
   }
 
-  Future<Map<String, dynamic>> transitionComplaint(int id, String action) =>
-      post('/complaints/$id/transition', {'action': action});
+  Future<List<Map<String, dynamic>>> complaintRecipients(int id) async {
+    final body = await get('/complaints/$id/recipients');
+    return (body['data'] as List? ?? [])
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> transitionComplaint(
+    int id,
+    String action, {
+    int? recipientId,
+    String? remarks,
+  }) => post('/complaints/$id/transition', {
+    'action': action,
+    'recipient_id': ?recipientId,
+    'remarks': ?remarks,
+  });
 
   Future<Map<String, dynamic>> addComplaintComment(int id, String comment) =>
       post('/complaints/$id/comments', {'comment': comment});
@@ -253,10 +271,7 @@ class ApiService {
   });
 
   Future<List<Map<String, dynamic>>> fetchNotifications() async {
-    final body = await get('/notifications');
-    return (body['data'] as List? ?? const [])
-        .map((item) => Map<String, dynamic>.from(item as Map))
-        .toList();
+    return _allPages('/notifications');
   }
 
   Future<void> readNotification(int id) async {
@@ -267,12 +282,71 @@ class ApiService {
     await post('/notifications/read-all', const {});
   }
 
-  Future<List<Map<String, dynamic>>> fetchNotices() async {
-    final body = await get('/notices');
-    return (body['data'] as List? ?? const [])
-        .map((item) => Map<String, dynamic>.from(item as Map))
-        .toList();
+  Future<List<Map<String, dynamic>>> fetchNotices() => _allPages('/notices');
+
+  Future<List<Map<String, dynamic>>> fetchMyNotices() =>
+      _allPages('/notices?mine=1');
+
+  Future<List<Map<String, dynamic>>> _allPages(String path) async {
+    final notices = <Map<String, dynamic>>[];
+    var page = 1;
+    while (true) {
+      final body = await get(
+        page == 1 ? path : '$path${path.contains('?') ? '&' : '?'}page=$page',
+      );
+      notices.addAll(
+        (body['data'] as List? ?? const []).map(
+          (item) => Map<String, dynamic>.from(item as Map),
+        ),
+      );
+      final lastPage =
+          body['last_page'] as int? ??
+          (body['meta'] as Map?)?['last_page'] as int? ??
+          1;
+      if (page >= lastPage) break;
+      page++;
+    }
+    return notices;
   }
+
+  Future<Map<String, dynamic>> fetchNoticeOptions() => get('/notices/options');
+
+  Future<Map<String, dynamic>> publishNotice(
+    Map<String, dynamic> data, {
+    int? id,
+    Uint8List? attachmentBytes,
+    String? attachmentName,
+  }) async {
+    final path = id == null ? '/notices' : '/notices/$id/update';
+    if (attachmentBytes == null) return post(path, data);
+    final request = http.MultipartRequest('POST', Uri.parse('$baseUrl$path'));
+    request.headers.addAll(await _headers());
+    request.fields['notice_data'] = jsonEncode(data);
+    request.files.add(
+      http.MultipartFile.fromBytes(
+        'attachment',
+        attachmentBytes,
+        filename: attachmentName,
+      ),
+    );
+    final response = await _client
+        .send(request)
+        .timeout(const Duration(seconds: 45));
+    return _handle(await http.Response.fromStream(response));
+  }
+
+  Future<Map<String, dynamic>> openNotice(int id) => get('/notices/$id');
+
+  Future<void> deleteNotice(int id) async {
+    _handle(
+      await _client
+          .delete(Uri.parse('$baseUrl/notices/$id'), headers: await _headers())
+          .timeout(const Duration(seconds: 15)),
+    );
+  }
+
+  Future<Map<String, dynamic>> republishNotice(int id) =>
+      post('/notices/$id/republish', {});
 
   Future<Map<String, dynamic>> get(String path) async {
     final response = await _client

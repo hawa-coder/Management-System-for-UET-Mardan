@@ -1,26 +1,51 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'app_state.dart';
 import 'api_service.dart';
+import 'complaint_routing.dart';
+import 'notice_composer.dart';
+import 'notice_board.dart';
 
 void main() => runApp(const DcmcsApp());
 
 class DcmcsApp extends StatefulWidget {
-  const DcmcsApp({super.key});
+  const DcmcsApp({super.key, this.api});
+  final ApiService? api;
   @override
   State<DcmcsApp> createState() => _DcmcsAppState();
 }
 
 class _DcmcsAppState extends State<DcmcsApp> {
-  final store = Store();
+  late final Store store;
   bool onboardingComplete = false;
+  Timer? noticeRefresh;
 
   @override
   void initState() {
     super.initState();
-    store.initialize();
+    store = Store(api: widget.api);
+    restoreSession();
+    noticeRefresh = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => store.refreshAnnouncements(),
+    );
+  }
+
+  @override
+  void dispose() {
+    noticeRefresh?.cancel();
+    store.dispose();
+    super.dispose();
+  }
+
+  Future<void> restoreSession() async {
+    await store.initialize();
+    if (mounted && store.signedIn) {
+      setState(() => onboardingComplete = true);
+    }
   }
 
   @override
@@ -65,10 +90,10 @@ class _DcmcsAppState extends State<DcmcsApp> {
       ),
       home: store.initializing
           ? const Scaffold(body: Center(child: CircularProgressIndicator()))
-          : !onboardingComplete
-          ? Onboarding(onDone: () => setState(() => onboardingComplete = true))
           : store.signedIn
           ? Shell(store)
+          : !onboardingComplete
+          ? Onboarding(onDone: () => setState(() => onboardingComplete = true))
           : Login(store),
     ),
   );
@@ -261,6 +286,7 @@ class _LoginState extends State<Login> {
   int? batchAdviserId;
   List<Map<String, dynamic>> advisers = const [];
   bool loadingAdvisers = false;
+  String? adviserError;
   bool hidePassword = true;
   bool createAccount = false;
 
@@ -271,13 +297,26 @@ class _LoginState extends State<Login> {
   }
 
   Future<void> loadAdvisers() async {
-    setState(() => loadingAdvisers = true);
+    setState(() {
+      loadingAdvisers = true;
+      adviserError = null;
+    });
     try {
       final result = await widget.store.api.fetchAdvisers();
       if (mounted) setState(() => advisers = result);
+    } on ApiException catch (error) {
+      if (mounted) {
+        setState(() {
+          advisers = const [];
+          adviserError = error.message;
+        });
+      }
     } catch (_) {
       if (mounted) {
-        setState(() => advisers = const []);
+        setState(() {
+          advisers = const [];
+          adviserError = 'Unable to load batch advisers. Please try again.';
+        });
       }
     } finally {
       if (mounted) setState(() => loadingAdvisers = false);
@@ -343,17 +382,6 @@ class _LoginState extends State<Login> {
       return 'Enter a valid @uetmardan.edu.pk email address.';
     }
 
-    final localPart = input.split('@').first;
-    final looksLikeStudent = RegExp(r'^\d').hasMatch(localPart);
-    if (createAccount && !looksLikeStudent) {
-      return 'Student email must begin with your registration digits.';
-    }
-    if (role == Role.student && !looksLikeStudent) {
-      return 'Select the staff role assigned to this account.';
-    }
-    if (role != Role.student && looksLikeStudent) {
-      return 'Student accounts cannot use a staff portal role.';
-    }
     return null;
   }
 
@@ -512,6 +540,7 @@ class _LoginState extends State<Login> {
                         enableSuggestions: false,
                         decoration: const InputDecoration(
                           labelText: 'University email',
+                          hintText: '23mdbcs345@uetmardan.edu.pk',
                           prefixIcon: Icon(Icons.email_outlined),
                         ),
                         validator: validateEmail,
@@ -524,6 +553,7 @@ class _LoginState extends State<Login> {
                           textInputAction: TextInputAction.next,
                           decoration: const InputDecoration(
                             labelText: 'Registration number',
+                            hintText: '23-MDBCS-345',
                             prefixIcon: Icon(Icons.badge_outlined),
                           ),
                           validator: (value) =>
@@ -608,6 +638,32 @@ class _LoginState extends State<Login> {
                               ? 'Choose your batch adviser.'
                               : null,
                         ),
+                        if (adviserError != null) ...[
+                          const SizedBox(height: 8),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(
+                                Icons.error_outline,
+                                color: Colors.red,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  adviserError!,
+                                  style: const TextStyle(color: Colors.red),
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: loadingAdvisers
+                                    ? null
+                                    : loadAdvisers,
+                                child: const Text('Retry'),
+                              ),
+                            ],
+                          ),
+                        ],
                         const SizedBox(height: 14),
                         TextFormField(
                           controller: mobileNumber,
@@ -1032,7 +1088,29 @@ class NotificationsScreen extends StatelessWidget {
                   ? Colors.transparent
                   : const Color(0xFFEFF5FF),
               child: InkWell(
-                onTap: () => store.markNotificationRead(notification),
+                onTap: () async {
+                  if (notification.noticeId != null) {
+                    await openNoticeDetails(
+                      context,
+                      store,
+                      notification.noticeId!,
+                    );
+                  } else {
+                    try {
+                      await store.markNotificationRead(notification);
+                    } catch (_) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Unable to mark notification as read.',
+                            ),
+                          ),
+                        );
+                      }
+                    }
+                  }
+                },
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
                   child: Row(
@@ -1218,7 +1296,12 @@ class Dashboard extends StatelessWidget {
           children: [
             Stat('Active', '$active', Icons.pending_actions, Colors.blue),
             Stat('Resolved', '$resolved', Icons.task_alt, Colors.green),
-            const Stat('Notices', '2', Icons.campaign, Colors.orange),
+            Stat(
+              'Notices',
+              '${store.notices.length}',
+              Icons.campaign,
+              Colors.orange,
+            ),
             Stat(
               store.role == Role.student ? 'Adviser' : 'Approved students',
               store.role == Role.student
@@ -1390,12 +1473,31 @@ class Dashboard extends StatelessWidget {
         const SizedBox(height: 8),
         ...store.complaints.take(3).map((c) => ComplaintCard(store, c)),
         const SizedBox(height: 18),
-        const SectionTitle('Latest notice'),
-        const NoticeCard(
-          'Mid-term examination schedule',
-          'The revised mid-term date sheet is available from the department office.',
-          'All Students · Today',
+        const SectionTitle('Latest Notices'),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton(
+            onPressed: () => store.go(2),
+            child: const Text('View All Notices'),
+          ),
         ),
+        if (store.canPublishNotices)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: FilledButton.icon(
+              onPressed: () => showNoticeComposer(context, store),
+              icon: const Icon(Icons.edit_note),
+              label: const Text('Create Notice'),
+            ),
+          ),
+        const SizedBox(height: 8),
+        if (store.notices.isEmpty)
+          const Text('No notices have been published for you yet.')
+        else
+          ...store.notices
+              .where((n) => n.status == 'Active')
+              .take(3)
+              .map((notice) => AnnouncementCard(store: store, notice: notice)),
       ],
     );
   }
@@ -1414,13 +1516,18 @@ class Stat extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(icon, color: color, size: 22),
-          const Spacer(),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-              color: navy,
+          Expanded(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.bottomLeft,
+              child: Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: navy,
+                ),
+              ),
             ),
           ),
           Text(
@@ -1545,11 +1652,14 @@ class ComplaintCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Text(
-                  c.id,
-                  style: const TextStyle(color: Colors.black45, fontSize: 12),
+                Expanded(
+                  child: Text(
+                    'Complaint ID: ${c.id}',
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.black45, fontSize: 12),
+                  ),
                 ),
-                const Spacer(),
+                const SizedBox(width: 8),
                 BadgeStatus(c.status),
               ],
             ),
@@ -1591,6 +1701,8 @@ class ComplaintCard extends StatelessWidget {
                 const Icon(Icons.chevron_right, color: Colors.black38),
               ],
             ),
+            const SizedBox(height: 12),
+            ComplaintRoutingSummary(c),
           ],
         ),
       ),
@@ -1683,49 +1795,24 @@ class Detail extends StatelessWidget {
                 Info('Category', c.category),
                 Info('Priority', c.priority),
                 Info('Current handler', c.handler),
-                Info(
-                  'Student',
-                  '${store.displayName} · ${store.displayRegistrationNumber}',
-                ),
               ],
             ),
           ),
         ),
         const SizedBox(height: 22),
-        const SectionTitle('Complaint timeline'),
-        ...c.history.asMap().entries.map(
-          (e) => Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Column(
-                children: [
-                  Container(
-                    width: 14,
-                    height: 14,
-                    decoration: const BoxDecoration(
-                      color: green,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  if (e.key < c.history.length - 1)
-                    Container(
-                      width: 2,
-                      height: 35,
-                      color: green.withValues(alpha: .25),
-                    ),
-                ],
-              ),
-              const SizedBox(width: 13),
-              Text(
-                e.value,
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-            ],
+        const SectionTitle('Complaint Routing'),
+        const SizedBox(height: 8),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: ComplaintRoutingSummary(c, expanded: true),
           ),
         ),
-        if (store.role == Role.adviser ||
-            store.role == Role.coordinator ||
-            store.role == Role.chairman) ...[
+        const SizedBox(height: 22),
+        const SectionTitle('Routing History'),
+        const SizedBox(height: 8),
+        ComplaintRoutingHistory(c),
+        if (store.role != Role.student) ...[
           const SizedBox(height: 22),
           StaffComments(store, c),
         ],
@@ -1742,10 +1829,7 @@ class Detail extends StatelessWidget {
             label: const Text('Publish resolution notice'),
           ),
         ],
-        if (store.role != Role.student &&
-            c.status != Status.rejected &&
-            (c.status != Status.resolved ||
-                (store.role == Role.chairman && c.handler == 'Closed'))) ...[
+        if (c.canAct || c.canForward || c.canSendResolution) ...[
           const SizedBox(height: 20),
           const SectionTitle('Take action'),
           Wrap(spacing: 8, runSpacing: 8, children: actions(context)),
@@ -1772,30 +1856,44 @@ class Detail extends StatelessWidget {
         child: Text(text),
       ),
     );
-    if (store.role == Role.chairman &&
-        c.status == Status.resolved &&
-        c.handler == 'Closed') {
-      add('Send resolution to Department Staff', 'send_resolved_department');
-      return out;
-    }
-    if (c.status != Status.review) {
+    if (c.canAct && c.status != Status.review) {
       add('Accept', 'accept');
     }
-    if (store.role == Role.adviser) {
-      add('Forward to coordinator', 'forward_coordinator');
+    if (c.canForward) {
+      out.add(
+        FilledButton.tonal(
+          onPressed: () => showDialog<void>(
+            context: context,
+            builder: (_) => ForwardComplaintDialog(store, c),
+          ),
+          child: const Text('Forward Complaint'),
+        ),
+      );
+      out.add(
+        FilledButton.tonal(
+          onPressed: () => showDialog<void>(
+            context: context,
+            builder: (_) => ForwardComplaintDialog(store, c, returning: true),
+          ),
+          child: const Text('Return Complaint'),
+        ),
+      );
     }
-    if (store.role == Role.coordinator) {
-      add('Forward to chairman', 'forward_chairman');
+    if (c.canSendResolution) {
+      out.add(
+        FilledButton.tonal(
+          onPressed: () => showDialog<void>(
+            context: context,
+            builder: (_) => ForwardComplaintDialog(store, c, resolution: true),
+          ),
+          child: const Text('Send Resolution'),
+        ),
+      );
     }
-    if (store.role == Role.chairman) {
-      add('Send to Department Staff', 'send_office');
-      add('Send to dean', 'send_dean');
+    if (c.canAct) {
+      add('Resolve', 'resolve');
+      add('Reject', 'reject');
     }
-    if (store.role == Role.office || store.role == Role.dean) {
-      add('Return to chairman', 'return_chairman');
-    }
-    add('Resolve', 'resolve');
-    add('Reject', 'reject');
     return out;
   }
 }
@@ -2206,89 +2304,8 @@ class _NewComplaintState extends State<NewComplaint> {
 class Notices extends StatelessWidget {
   const Notices(this.store, {super.key});
   final Store store;
-
   @override
-  Widget build(BuildContext context) => ListView(
-    padding: const EdgeInsets.all(20),
-    children: [
-      const Text(
-        'Notice board',
-        style: TextStyle(
-          fontSize: 28,
-          fontWeight: FontWeight.w800,
-          color: navy,
-        ),
-      ),
-      const Text(
-        'Official updates from the Computer Science Department.',
-        style: TextStyle(color: Colors.black54),
-      ),
-      const SizedBox(height: 18),
-      if (store.loadingData)
-        const Center(child: CircularProgressIndicator())
-      else if (store.notices.isEmpty)
-        const Center(child: Text('No notices have been published.'))
-      else
-        ...store.notices.map(
-          (notice) => NoticeCard(notice.title, notice.body, notice.meta),
-        ),
-    ],
-  );
-}
-
-class NoticeCard extends StatelessWidget {
-  const NoticeCard(this.title, this.body, this.meta, {super.key});
-  final String title, body, meta;
-  @override
-  Widget build(BuildContext context) => Card(
-    margin: const EdgeInsets.only(bottom: 12),
-    child: Padding(
-      padding: const EdgeInsets.all(18),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFF2DD),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(Icons.campaign, color: Colors.orange),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: navy,
-                  ),
-                ),
-                const SizedBox(height: 7),
-                Text(
-                  body,
-                  style: const TextStyle(color: Colors.black54, height: 1.4),
-                ),
-                const SizedBox(height: 9),
-                Text(
-                  meta,
-                  style: const TextStyle(
-                    color: green,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
+  Widget build(BuildContext context) => NoticeBoard(store);
 }
 
 class Profile extends StatelessWidget {
@@ -2654,7 +2671,7 @@ class _ForgotPasswordDialogState extends State<ForgotPasswordDialog> {
           TextField(
             controller: email,
             enabled: !codeSent,
-            decoration: const InputDecoration(labelText: 'University email'),
+            decoration: const InputDecoration(labelText: 'Email address'),
           ),
           if (codeSent) ...[
             const SizedBox(height: 10),

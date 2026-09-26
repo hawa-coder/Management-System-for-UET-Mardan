@@ -11,9 +11,18 @@ const studentName = 'Hawa Sabir';
 const studentRegistrationNumber = '2023-CS-001';
 const studentEmail = '2023cs001@uetmardan.edu.pk';
 
-enum Role { student, adviser, coordinator, chairman, office, dean }
+enum Role { student, adviser, coordinator, chairman, office, dean, faculty }
 
-enum Status { submitted, review, forwarded, office, dean, resolved, rejected }
+enum Status {
+  submitted,
+  review,
+  forwarded,
+  office,
+  dean,
+  resolved,
+  rejected,
+  returned,
+}
 
 extension RoleName on Role {
   String get label => const [
@@ -23,6 +32,7 @@ extension RoleName on Role {
     'Chairman',
     'Department Staff',
     'Dean',
+    'Faculty Member',
   ][index];
 }
 
@@ -35,6 +45,7 @@ extension StatusName on Status {
     'Waiting for Dean',
     'Resolved',
     'Rejected',
+    'Returned',
   ][index];
 
   Color get color => this == Status.resolved
@@ -44,6 +55,51 @@ extension StatusName on Status {
       : (this == Status.office || this == Status.dean)
       ? const Color(0xFFE28A19)
       : const Color(0xFF3867D6);
+}
+
+class RoutingPerson {
+  const RoutingPerson({this.id, required this.name, required this.role});
+  final int? id;
+  final String name, role;
+  String get roleLabel =>
+      Role.values.where((r) => r.name == role).firstOrNull?.label ?? role;
+  String get label =>
+      '${name.isEmpty ? (role == 'student' ? 'Registration number unavailable' : 'Name not recorded') : name} – $roleLabel';
+
+  factory RoutingPerson.fromJson(Map<String, dynamic> json) => RoutingPerson(
+    id: json['id'] as int?,
+    name: json['name']?.toString() ?? '',
+    role: json['role']?.toString() ?? '',
+  );
+}
+
+class RoutingEvent {
+  const RoutingEvent({
+    required this.action,
+    required this.type,
+    this.actor,
+    this.recipient,
+    this.comment,
+    this.createdAt,
+  });
+  final String action, type;
+  final RoutingPerson? actor, recipient;
+  final String? comment;
+  final DateTime? createdAt;
+  factory RoutingEvent.fromJson(Map<String, dynamic> json) => RoutingEvent(
+    action: json['action']?.toString() ?? '',
+    type: json['event_type']?.toString() ?? 'legacy',
+    actor: json['actor'] is Map
+        ? RoutingPerson.fromJson(Map<String, dynamic>.from(json['actor']))
+        : null,
+    recipient: json['recipient'] is Map
+        ? RoutingPerson.fromJson(Map<String, dynamic>.from(json['recipient']))
+        : null,
+    comment: json['remarks']?.toString(),
+    createdAt: DateTime.tryParse(
+      json['created_at']?.toString() ?? '',
+    )?.toLocal(),
+  );
 }
 
 class Complaint {
@@ -57,6 +113,12 @@ class Complaint {
     required this.createdAt,
     this.status = Status.submitted,
     this.handler = 'Batch Adviser',
+    this.registrationNumber = 'Registration number unavailable',
+    this.handlerRole = 'adviser',
+    this.routing = const {},
+    this.routingHistory = const [],
+    this.permissions = const {},
+    this.updatedAt,
     List<String>? history,
     this.attachmentName,
     this.attachmentUrl,
@@ -67,6 +129,22 @@ class Complaint {
   final int? backendId;
   final String id, title, details, category, priority;
   final DateTime createdAt;
+  final DateTime? updatedAt;
+  final String registrationNumber, handlerRole;
+  final Map<String, RoutingPerson?> routing;
+  final List<RoutingEvent> routingHistory;
+  final Map<String, dynamic> permissions;
+  bool get canAct => permissions['can_act'] == true;
+  bool get canForward => permissions['can_forward'] == true;
+  bool get canSendResolution => permissions['can_send_resolution'] == true;
+  String routingLabel(String key, {String fallback = 'Not yet forwarded'}) =>
+      routing[key]?.label ?? fallback;
+  String get currentlyWith => routingLabel(
+    'currently_with',
+    fallback: handlerRole == 'closed'
+        ? 'Closed'
+        : 'Name not recorded – $handler',
+  );
   final String? attachmentName, attachmentUrl;
   Status status;
   String handler;
@@ -87,8 +165,30 @@ class Complaint {
       category: json['category']?.toString() ?? '',
       priority: json['priority']?.toString() ?? 'Medium',
       createdAt:
-          DateTime.tryParse(json['created_at']?.toString() ?? '') ??
+          DateTime.tryParse(json['created_at']?.toString() ?? '')?.toLocal() ??
           DateTime.now(),
+      updatedAt: DateTime.tryParse(
+        json['updated_at']?.toString() ?? '',
+      )?.toLocal(),
+      registrationNumber:
+          json['student_registration_number']?.toString() ??
+          'Registration number unavailable',
+      handlerRole: handler,
+      routing: Map<String, dynamic>.from(json['routing'] as Map? ?? {}).map(
+        (key, value) => MapEntry(
+          key,
+          value is Map
+              ? RoutingPerson.fromJson(Map<String, dynamic>.from(value))
+              : null,
+        ),
+      ),
+      routingHistory: (json['history'] as List? ?? [])
+          .map(
+            (entry) =>
+                RoutingEvent.fromJson(Map<String, dynamic>.from(entry as Map)),
+          )
+          .toList(),
+      permissions: Map<String, dynamic>.from(json['permissions'] as Map? ?? {}),
       status: Status.values.byName(json['status']?.toString() ?? 'submitted'),
       handler: handler == 'closed'
           ? 'Closed'
@@ -147,9 +247,11 @@ class AppNotification {
     required this.time,
     required this.type,
     this.isRead = false,
+    this.noticeId,
   });
 
   final int? backendId;
+  final int? noticeId;
   final String title, message, time;
   final NotificationType type;
   bool isRead;
@@ -160,6 +262,7 @@ class AppNotification {
       backendId: json['id'] as int?,
       title: json['title']?.toString() ?? '',
       message: json['message']?.toString() ?? '',
+      noticeId: json['notice_id'] as int?,
       time: _relativeTime(json['created_at']?.toString()),
       type:
           NotificationType.values
@@ -172,21 +275,101 @@ class AppNotification {
 }
 
 class DepartmentNotice {
-  const DepartmentNotice({
+  DepartmentNotice({
     required this.title,
     required this.body,
     required this.meta,
+    this.data = const {},
+    this.isRead = false,
   });
   final String title, body, meta;
+  final Map<String, dynamic> data;
+  bool isRead;
+  int get id => data['id'] as int? ?? 0;
+  String get category => data['category']?.toString() ?? 'Department';
+  String get priority => data['priority']?.toString() ?? 'Normal';
+  String get status {
+    if (expiresAt != null && expiresAt!.isBefore(DateTime.now())) {
+      return 'Expired';
+    }
+    if (date != null && date!.isAfter(DateTime.now())) return 'Scheduled';
+    return 'Active';
+  }
 
-  factory DepartmentNotice.fromJson(
-    Map<String, dynamic> json,
-  ) => DepartmentNotice(
-    title: json['title']?.toString() ?? '',
-    body: json['body']?.toString() ?? '',
-    meta:
-        '${json['audience'] == 'all' ? 'All users' : json['audience']} · ${_relativeTime(json['published_at']?.toString())}',
-  );
+  DateTime? get date => DateTime.tryParse(
+    (data['notice_date'] ?? data['published_at'])?.toString() ?? '',
+  )?.toLocal();
+  DateTime? get expiresAt =>
+      DateTime.tryParse(data['expires_at']?.toString() ?? '')?.toLocal();
+  String? get attachmentName => data['attachment_name']?.toString();
+  String get publisherName =>
+      (data['publisher'] as Map?)?['name']?.toString() ?? 'University staff';
+  String get publisherRole {
+    final role = (data['publisher'] as Map?)?['role'];
+    return Role.values.where((r) => r.name == role).firstOrNull?.label ??
+        'Staff';
+  }
+
+  String get targetSummary {
+    final parts = <String>[];
+    for (final entry in {
+      'departments': 'Department',
+      'batches': 'Batch',
+      'semesters': 'Semester',
+      'sections': 'Section',
+    }.entries) {
+      final values = data[entry.key] as List? ?? [];
+      if (values.isNotEmpty) parts.add('${entry.value}: ${values.join(', ')}');
+    }
+    for (final entry in {
+      'department': 'Department',
+      'batch': 'Batch',
+      'semester': 'Semester',
+      'section': 'Section',
+    }.entries) {
+      if (data[entry.key] != null) {
+        parts.add('${entry.value}: ${data[entry.key]}');
+      }
+    }
+    if ((data['course_ids'] as List? ?? []).isNotEmpty) {
+      parts.add('${(data['course_ids'] as List).length} selected course(s)');
+    }
+    if ((data['student_ids'] as List? ?? []).isNotEmpty) {
+      parts.add('${(data['student_ids'] as List).length} selected student(s)');
+    }
+    if (data['target_adviser_id'] != null) parts.add('Assigned students');
+    if (data['target_faculty_id'] != null) parts.add('Taught classes only');
+    if (data['scope_department'] != null) {
+      parts.add('${data['scope_department']}');
+    }
+    return parts.isEmpty ? 'All students' : parts.join(' · ');
+  }
+
+  factory DepartmentNotice.fromJson(Map<String, dynamic> json) {
+    final publisher = json['publisher'] as Map?;
+    final audience = json['audience']?.toString() ?? 'all';
+    final labels = [
+      if (publisher != null)
+        '${publisher['name']} (${Role.values.where((r) => r.name == publisher['role']).firstOrNull?.label ?? publisher['role']})',
+      audience == 'all'
+          ? 'All users'
+          : Role.values.where((r) => r.name == audience).firstOrNull?.label ??
+                audience,
+      if (json['department'] != null) '${json['department']}',
+      if (json['batch'] != null) 'Batch ${json['batch']}',
+      if (json['semester'] != null) 'Semester ${json['semester']}',
+      if (json['section'] != null) 'Section / field ${json['section']}',
+      if (json['target_adviser_id'] != null) 'Assigned students only',
+      _relativeTime(json['published_at']?.toString()),
+    ];
+    return DepartmentNotice(
+      title: json['title']?.toString() ?? '',
+      body: json['body']?.toString() ?? '',
+      meta: labels.where((label) => label.isNotEmpty).join(' · '),
+      data: json,
+      isRead: json['is_read'] == true,
+    );
+  }
 }
 
 String _relativeTime(String? value) {
@@ -204,6 +387,15 @@ class Store extends ChangeNotifier {
   Store({ApiService? api}) : api = api ?? ApiService();
 
   final ApiService api;
+  bool _disposed = false;
+  bool _refreshingAnnouncements = false;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+
   bool signedIn = false;
   bool authenticating = false;
   bool initializing = true;
@@ -215,6 +407,112 @@ class Store extends ChangeNotifier {
   Map<String, dynamic>? authenticatedUser;
   final pendingStudents = <Map<String, dynamic>>[];
   final adviserApprovals = <Map<String, dynamic>>[];
+
+  bool get canPublishNotices =>
+      const {
+        Role.chairman,
+        Role.adviser,
+        Role.faculty,
+        Role.coordinator,
+        Role.dean,
+      }.contains(role) &&
+      authenticatedUser?['account_status'] == 'approved';
+
+  final myNotices = <DepartmentNotice>[];
+
+  int get unreadNoticeCount =>
+      notices.where((n) => !n.isRead && n.status == 'Active').length;
+
+  void _updateNotice(Map<String, dynamic> json) {
+    final notice = DepartmentNotice.fromJson(json);
+    notices.removeWhere((n) => n.id == notice.id);
+    if (notice.status == 'Active') notices.add(notice);
+    myNotices.removeWhere((n) => n.id == notice.id);
+    if (json['published_by'] == authenticatedUser?['id']) myNotices.add(notice);
+    const priorities = {'Urgent': 0, 'Important': 1, 'Normal': 2};
+    for (final list in [notices, myNotices]) {
+      list.sort((a, b) {
+        final order = (priorities[a.priority] ?? 2).compareTo(
+          priorities[b.priority] ?? 2,
+        );
+        return order != 0
+            ? order
+            : (b.date ?? DateTime(2000)).compareTo(a.date ?? DateTime(2000));
+      });
+    }
+    notifyListeners();
+  }
+
+  Future<void> publishNotice(
+    Map<String, dynamic> data, {
+    int? id,
+    Uint8List? attachmentBytes,
+    String? attachmentName,
+  }) async {
+    _updateNotice(
+      await api.publishNotice(
+        data,
+        id: id,
+        attachmentBytes: attachmentBytes,
+        attachmentName: attachmentName,
+      ),
+    );
+  }
+
+  Future<void> loadMyNotices() async {
+    final result = await api.fetchMyNotices();
+    myNotices
+      ..clear()
+      ..addAll(result.map(DepartmentNotice.fromJson));
+    notifyListeners();
+  }
+
+  Future<DepartmentNotice> openNotice(int id) async {
+    final result = await api.openNotice(id);
+    _updateNotice(result);
+    for (final notification in notifications.where((n) => n.noticeId == id)) {
+      notification.isRead = true;
+    }
+    notifyListeners();
+    return DepartmentNotice.fromJson(result);
+  }
+
+  Future<void> deleteNotice(int id) async {
+    await api.deleteNotice(id);
+    notices.removeWhere((n) => n.id == id);
+    myNotices.removeWhere((n) => n.id == id);
+    notifications.removeWhere((n) => n.noticeId == id);
+    notifyListeners();
+  }
+
+  Future<void> republishNotice(int id) async =>
+      _updateNotice(await api.republishNotice(id));
+
+  Future<void> refreshAnnouncements() async {
+    if (_disposed || !signedIn || loadingData || _refreshingAnnouncements) {
+      return;
+    }
+    _refreshingAnnouncements = true;
+    final userId = authenticatedUser?['id'];
+    try {
+      final result = await Future.wait([
+        api.fetchNotices(),
+        api.fetchNotifications(),
+      ]);
+      if (_disposed || !signedIn || authenticatedUser?['id'] != userId) return;
+      notices
+        ..clear()
+        ..addAll(result[0].map(DepartmentNotice.fromJson));
+      notifications
+        ..clear()
+        ..addAll(result[1].map(AppNotification.fromJson));
+      notifyListeners();
+    } catch (_) {
+      // Keep the last loaded board during a temporary connection failure.
+    } finally {
+      _refreshingAnnouncements = false;
+    }
+  }
 
   String get displayName =>
       authenticatedUser?['name']?.toString() ?? studentName;
@@ -330,6 +628,9 @@ class Store extends ChangeNotifier {
       await api.readNotification(notification.backendId!);
     }
     notification.isRead = true;
+    for (final notice in notices.where((n) => n.id == notification.noticeId)) {
+      notice.isRead = true;
+    }
     notifyListeners();
   }
 
@@ -346,6 +647,12 @@ class Store extends ChangeNotifier {
 
     try {
       await api.readAllNotifications();
+      for (final notice in notices.where(
+        (n) => unread.any((item) => item.noticeId == n.id),
+      )) {
+        notice.isRead = true;
+      }
+      notifyListeners();
     } catch (_) {
       for (final notification in unread) {
         notification.isRead = false;
@@ -523,6 +830,12 @@ class Store extends ChangeNotifier {
     }
     signedIn = false;
     authenticatedUser = null;
+    notices.clear();
+    myNotices.clear();
+    notifications.clear();
+    complaints.clear();
+    pendingStudents.clear();
+    adviserApprovals.clear();
     tab = 0;
     notifyListeners();
   }
@@ -552,13 +865,38 @@ class Store extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> move(Complaint complaint, String action) async {
+  Future<void> move(
+    Complaint complaint,
+    String action, {
+    int? recipientId,
+    String? remarks,
+  }) async {
     if (complaint.backendId == null) return;
-    final updated = await api.transitionComplaint(complaint.backendId!, action);
-    final index = complaints.indexOf(complaint);
+    final updated = await api.transitionComplaint(
+      complaint.backendId!,
+      action,
+      recipientId: recipientId,
+      remarks: remarks,
+    );
+    final index = complaints.indexWhere(
+      (c) => c.backendId == complaint.backendId,
+    );
     if (index >= 0) complaints[index] = Complaint.fromJson(updated);
-    await _refreshNotifications();
     notifyListeners();
+    // The routing operation has already succeeded even if notification refresh fails.
+    try {
+      await _refreshNotifications();
+    } on ApiException {
+      /* Retry on the next refresh. */
+    }
+  }
+
+  Future<Complaint> openComplaint(int id) async {
+    final complaint = Complaint.fromJson(await api.fetchComplaint(id));
+    final index = complaints.indexWhere((c) => c.backendId == id);
+    if (index >= 0) complaints[index] = complaint;
+    notifyListeners();
+    return complaint;
   }
 
   Future<void> addComplaintComment(Complaint complaint, String text) async {

@@ -33,6 +33,7 @@ class User extends Authenticatable
         'batch_adviser_id',
         'is_active',
         'account_status',
+        'can_publish_department_notices',
     ];
 
     /**
@@ -54,11 +55,18 @@ class User extends Authenticatable
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
         'is_active' => 'boolean',
+        'can_publish_department_notices' => 'boolean',
+        'can_forward_complaints' => 'boolean',
     ];
 
     public function complaints()
     {
         return $this->hasMany(Complaint::class);
+    }
+
+    public function courses()
+    {
+        return $this->belongsToMany(Course::class, 'course_student');
     }
 
     public function batchAdviser()

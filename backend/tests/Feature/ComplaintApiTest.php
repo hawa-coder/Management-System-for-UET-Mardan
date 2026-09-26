@@ -50,6 +50,7 @@ class ComplaintApiTest extends TestCase
 
     public function test_adviser_can_forward_an_assigned_complaint(): void
     {
+        User::factory()->create(['role' => 'coordinator']);
         $adviser = User::factory()->create(['role' => 'adviser']);
         $student = User::factory()->create([
             'role' => 'student',
